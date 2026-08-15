@@ -1,4 +1,4 @@
-import { expect } from "chai";
+﻿import { expect } from "chai";
 import { ethers } from "hardhat";
 
 /**
@@ -12,15 +12,6 @@ import { ethers } from "hardhat";
  * hackathon judge to trust: given a "verified" event, does the on-chain
  * guardrail policy (caps, daily limits, human-confirmation flow) behave
  * exactly as claimed.
- *
- * NOTE: this file could not be executed inside the sandbox used to prepare
- * this submission, because that sandbox's network allowlist blocks
- * binaries.soliditylang.org, which `npx hardhat compile` needs to fetch a
- * native solc binary. The same contract logic WAS verified to compile
- * cleanly with solc 0.8.23 via `node scripts/compile-check.cjs` (solc-js,
- * no native binary needed) — see that script's output in the project
- * README. Run `npx hardhat test` on a normal dev machine or in CI (see
- * .github/workflows/ci.yml) to execute this suite for real before demo day.
  *
  * Known gap, flagged honestly rather than hidden: the tests below cover
  * registration and access control, but NOT the full
@@ -38,12 +29,20 @@ describe("AttestGuardManager", function () {
     const Token = await ethers.getContractFactory("DemoAdvanceToken");
     const token = await Token.deploy(owner.address, ethers.parseEther("1000000"));
 
-    const Manager = await ethers.getContractFactory("AttestGuardManager");
+    const Decoder = await ethers.getContractFactory("EvmV1Decoder");
+    const decoder = await Decoder.deploy();
+    await decoder.waitForDeployment();
+
+    const Manager = await ethers.getContractFactory("AttestGuardManager", {
+      libraries: {
+        EvmV1Decoder: await decoder.getAddress(),
+      },
+    });
     const manager = await Manager.deploy(
       await token.getAddress(),
-      1, // sourceChainKey
-      ethers.parseEther("5000"), // globalMaxAdvance
-      ethers.parseEther("2000") // perSupplierDailyCap
+      1,
+      ethers.parseEther("5000"),
+      ethers.parseEther("2000")
     );
 
     await manager.setGuardianConfirmer(guardian.address);
@@ -67,7 +66,7 @@ describe("AttestGuardManager", function () {
     );
 
     const advance = await manager.getAdvance(invoiceId);
-    expect(advance.status).to.equal(1n); // Registered
+    expect(advance.status).to.equal(1n);
     expect(advance.requestedAdvanceAmount).to.equal(ethers.parseEther("400"));
   });
 
@@ -81,7 +80,7 @@ describe("AttestGuardManager", function () {
         supplier.address,
         buyer.address,
         ethers.parseEther("100"),
-        ethers.parseEther("500"), // more than invoice value
+        ethers.parseEther("500"),
         "n/a"
       )
     ).to.be.revertedWith("Advance cannot exceed invoice amount");
@@ -112,12 +111,10 @@ describe("AttestGuardManager", function () {
       supplier.address,
       buyer.address,
       ethers.parseEther("4000"),
-      ethers.parseEther("4000"), // far above default auto-approve cap -> should end up WARN once funded via proof
+      ethers.parseEther("4000"),
       "large first-time advance, flagged for review"
     );
 
-    // Before any proof is submitted the advance is still Registered, so
-    // confirmPendingAdvance must revert — there is nothing to confirm yet.
     await expect(manager.connect(other).confirmPendingAdvance(invoiceId)).to.be.reverted;
   });
 
