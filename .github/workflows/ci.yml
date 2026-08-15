@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - name: Compile contracts (real Hardhat + solc, not the sandbox workaround)
+        run: npx hardhat compile
+      - name: Solidity tests
+        run: npx hardhat test
+
+  offchain-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - name: Typecheck agent
+        run: npx tsc -p offchain-agent/tsconfig.json
+      - name: Policy engine unit tests
+        run: node --test offchain-agent/dist/offchain-agent/test/*.test.js

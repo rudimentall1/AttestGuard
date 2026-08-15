@@ -1,0 +1,30 @@
+{
+  "name": "attestguard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-agent-gated trade-finance advances on Creditcoin, triggered by Attestcoin Protocol-verified cross-chain events.",
+  "license": "MIT",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test:contracts": "hardhat test",
+    "test:agent": "node --test offchain-agent/dist/**/*.test.js",
+    "build:agent": "tsc -p offchain-agent/tsconfig.json",
+    "deploy:manager": "hardhat run deploy/deploy_manager.ts --network creditcoin_testnet",
+    "worker": "node --loader ts-node/esm offchain-agent/src/worker.ts"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "hardhat": "^2.22.0",
+    "solc": "^0.8.23",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "@gluwa/usc-contracts": "^0.1.2",
+    "@gluwa/usc-sdk": "^0.18.0",
+    "@openzeppelin/contracts": "^5.0.2",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.0"
+  }
+}
