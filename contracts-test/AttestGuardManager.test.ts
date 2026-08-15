@@ -1,4 +1,4 @@
-﻿import { expect } from "chai";
+import { expect } from "chai";
 import { ethers } from "hardhat";
 
 /**
@@ -127,5 +127,55 @@ describe("AttestGuardManager", function () {
   it("prevents a non-owner from changing policy caps", async function () {
     const { manager, other } = await deployFixture();
     await expect(manager.connect(other).setGlobalMaxAdvance(ethers.parseEther("1"))).to.be.reverted;
+  });
+
+  it("lets the owner withdraw liquidity that was deposited but never funded out", async function () {
+    const { manager, token, owner } = await deployFixture();
+    const managerAddress = await manager.getAddress();
+    const before = await token.balanceOf(managerAddress);
+    expect(before).to.equal(ethers.parseEther("100000"));
+
+    const ownerBalanceBefore = await token.balanceOf(owner.address);
+    await manager.withdrawLiquidity(ethers.parseEther("40000"));
+
+    expect(await token.balanceOf(managerAddress)).to.equal(ethers.parseEther("60000"));
+    expect(await token.balanceOf(owner.address)).to.equal(ownerBalanceBefore + ethers.parseEther("40000"));
+  });
+
+  it("prevents a non-owner from withdrawing liquidity", async function () {
+    const { manager, other } = await deployFixture();
+    await expect(manager.connect(other).withdrawLiquidity(ethers.parseEther("1"))).to.be.reverted;
+  });
+
+  it("blocks fundAdvanceFromQuery-path functions while paused, without blocking registration", async function () {
+    const { manager, supplier, buyer, other } = await deployFixture();
+    await manager.pause();
+
+    const invoiceId = ethers.id("invoice-while-paused");
+    await expect(
+      manager.registerAdvance(
+        invoiceId,
+        supplier.address,
+        buyer.address,
+        ethers.parseEther("100"),
+        ethers.parseEther("50"),
+        "registered while paused, should still succeed"
+      )
+    ).to.not.be.reverted;
+
+    await expect(manager.connect(other).confirmPendingAdvance(invoiceId)).to.be.reverted;
+  });
+
+  it("lets the owner unpause and resume normal operation", async function () {
+    const { manager } = await deployFixture();
+    await manager.pause();
+    expect(await manager.paused()).to.equal(true);
+    await manager.unpause();
+    expect(await manager.paused()).to.equal(false);
+  });
+
+  it("prevents a non-owner from pausing or unpausing", async function () {
+    const { manager, other } = await deployFixture();
+    await expect(manager.connect(other).pause()).to.be.reverted;
   });
 });

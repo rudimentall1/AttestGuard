@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -13,26 +14,20 @@ import {AdvanceRequest, AdvanceStatus} from "./AdvanceTypes.sol";
 /// @title AttestGuardManager
 /// @notice An Attestcoin Smart Contract (ASC) that releases trade-finance
 /// advances to suppliers on Creditcoin the moment a delivery/acceptance
-/// event is *cryptographically verified* on the buyer's source chain — no
+/// event is cryptographically verified on the buyer's source chain - no
 /// centralized oracle, no factoring desk waiting on an email.
 ///
 /// This is deliberately NOT "verify proof -> pay unconditionally". A verified
 /// event only tells us the event really happened; it says nothing about
-/// whether releasing money *right now, in this amount, to this supplier* is
+/// whether releasing money right now, in this amount, to this supplier is
 /// a good idea. That judgment is the job of the guardrail policy layer
 /// below, which is enforced ON-CHAIN so it cannot be skipped by a
-/// misbehaving or compromised off-chain agent:
+/// misbehaving or compromised off-chain agent.
 ///
-///   verified cross-chain event  --->  deterministic policy gate  --->  funds move
-///        (Attestcoin Protocol)          (this contract, on-chain)
-///
-/// An off-chain AI agent (see offchain-agent/) watches for trigger events,
-/// requests proofs, and calls this contract — but every decision it makes is
-/// re-checked here. If the agent is wrong, buggy, or compromised, the worst
-/// it can do is fail to submit a good advance; it can never force a bad one
-/// through, because the caps below are enforced in this contract, not in the
-/// agent's process.
-contract AttestGuardManager is Ownable, ReentrancyGuard {
+/// v2: adds a circuit breaker (Pausable, on the two functions that move
+/// funds) and a withdrawLiquidity escape hatch for the owner - see
+/// SECURITY.md for why v1 shipped without either and what changed.
+contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     // ---------------------------------------------------------------
@@ -43,14 +38,11 @@ contract AttestGuardManager is Ownable, ReentrancyGuard {
     mapping(bytes32 => bool) public processedQueries;
 
     /// @dev keccak256("DeliveryConfirmed(bytes32,address,address,uint256)")
-    /// Emitted by the source-chain TradeConfirmation contract when a buyer
-    /// confirms receipt/acceptance of goods against an invoice.
     bytes32 public constant DELIVERY_CONFIRMED_SIGNATURE =
         0xaa1f52eabee6b1038832c601bbe7c91743c29566c1bb8da851a5bcdc2e35b8f3;
 
     /// @notice The only source-chain contract whose DeliveryConfirmed events
-    /// we accept. Prevents anyone from proving an event from an unrelated,
-    /// attacker-controlled contract on the same source chain.
+    /// we accept.
     address public sourceConfirmationContract;
     uint64 public sourceChainKey;
 
@@ -65,32 +57,14 @@ contract AttestGuardManager is Ownable, ReentrancyGuard {
     // Guardrail policy state (the deterministic, unbypassable layer)
     // ---------------------------------------------------------------
 
-    /// @notice Per-supplier cap below which an advance auto-funds with no
-    /// human in the loop. Starts low for every new supplier and can only
-    /// rise through `_growAutoApproveCap`, which is driven purely by that
-    /// supplier's own verified on-chain repayment history — not by
-    /// anything the off-chain agent claims about them.
     mapping(address => uint256) public autoApproveCap;
-
-    /// @notice Hard ceiling no single advance may exceed, auto or
-    /// human-confirmed, regardless of supplier history. Owner-adjustable,
-    /// but every change is a public, auditable transaction.
     uint256 public globalMaxAdvance;
-
-    /// @notice Rolling 1-day funding cap per supplier, independent of the
-    /// per-advance cap, to bound blast radius from a single compromised or
-    /// misconfigured agent.
     uint256 public perSupplierDailyCap;
     mapping(address => uint256) public suppliersFundedToday;
     mapping(address => uint256) public suppliersDayBucket;
-
-    /// @notice Address (e.g. a Safe multisig, or a human reviewer's EOA in a
-    /// demo) authorized to confirm advances that exceed a supplier's
-    /// auto-approve cap. Distinct from `owner`, which sets policy but should
-    /// not also be the one rubber-stamping individual payouts.
     address public guardianConfirmer;
 
-    uint256 public constant DEFAULT_AUTO_APPROVE_CAP = 500 ether; // demo-scale stablecoin units
+    uint256 public constant DEFAULT_AUTO_APPROVE_CAP = 500 ether;
     uint256 public constant AUTO_APPROVE_CAP_GROWTH_PER_REPAYMENT = 250 ether;
     uint256 public constant SECONDS_PER_DAY = 1 days;
 
@@ -107,6 +81,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard {
     event RepaymentAcknowledged(bytes32 indexed invoiceId, address indexed supplier, uint256 newAutoApproveCap);
     event AutoApproveCapUpdated(address indexed supplier, uint256 newCap);
     event GuardianConfirmerUpdated(address indexed newGuardian);
+    event LiquidityWithdrawn(address indexed to, uint256 amount);
 
     error QueryAlreadyProcessed();
     error ProofVerificationFailed();
@@ -150,10 +125,29 @@ contract AttestGuardManager is Ownable, ReentrancyGuard {
         perSupplierDailyCap = amount;
     }
 
-    /// @notice Fund the manager's vault. Anyone can top it up (e.g. a
-    /// liquidity provider); only policy-approved advances can draw it down.
+    /// @notice Fund the manager's vault. Anyone can top it up; only
+    /// policy-approved advances can draw it down.
     function depositLiquidity(uint256 amount) external {
         ADVANCE_TOKEN.safeTransferFrom(msg.sender, address(this), amount);
+    }
+
+    /// @notice Escape hatch for liquidity that was deposited but never drawn
+    /// down by a funded advance. Owner-only pooled demo/testnet liquidity,
+    /// not a vault with individual depositor claims.
+    function withdrawLiquidity(uint256 amount) external onlyOwner {
+        ADVANCE_TOKEN.safeTransfer(msg.sender, amount);
+        emit LiquidityWithdrawn(msg.sender, amount);
+    }
+
+    /// @notice Circuit breaker. Halts fundAdvanceFromQuery and
+    /// confirmPendingAdvance - the two functions that move funds out of the
+    /// vault - without touching registration, rejection, or view functions.
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
     }
 
     // ---------------------------------------------------------------
@@ -197,10 +191,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard {
 
     /// @notice Called by the off-chain agent once it has a proof that the
     /// buyer's DeliveryConfirmed event for this invoice really happened on
-    /// the source chain. Verification and every policy check below happen
-    /// synchronously, in this transaction — the off-chain agent's own
-    /// opinion about whether this is a good advance is advisory only and
-    /// never substitutes for these checks.
+    /// the source chain.
     function fundAdvanceFromQuery(
         bytes32 invoiceId,
         uint64 blockHeight,
@@ -209,7 +200,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard {
         INativeQueryVerifier.MerkleProofEntry[] calldata siblings,
         bytes32 lowerEndpointDigest,
         bytes32[] calldata continuityRoots
-    ) external nonReentrant returns (bool autoFunded) {
+    ) external nonReentrant whenNotPaused returns (bool autoFunded) {
         AdvanceRequest storage advance = advances[invoiceId];
         if (advance.status != AdvanceStatus.Registered) revert AdvanceNotPending();
 
@@ -249,7 +240,6 @@ contract AttestGuardManager is Ownable, ReentrancyGuard {
         for (uint256 i = 0; i < logs.length; i++) {
             EvmV1Decoder.LogEntry memory log = logs[i];
             if (log.address_ != sourceConfirmationContract) continue;
-            // topics: [0]=sig, [1]=invoiceId, [2]=buyer  (amount is in data)
             if (log.topics.length < 3) continue;
             if (log.topics[1] != advance.invoiceId) continue;
             if (address(uint160(uint256(log.topics[2]))) != advance.buyer) continue;
@@ -260,7 +250,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard {
     }
 
     // ---------------------------------------------------------------
-    // The guardrail policy gate — this is the part that cannot be skipped
+    // The guardrail policy gate - this is the part that cannot be skipped
     // ---------------------------------------------------------------
 
     function _applyPolicyAndMaybeFund(AdvanceRequest storage advance) internal returns (bool autoFunded) {
@@ -292,10 +282,8 @@ contract AttestGuardManager is Ownable, ReentrancyGuard {
     }
 
     /// @notice Human-in-the-loop path for advances the on-chain policy
-    /// flagged as WARN. Only `guardianConfirmer` can release these funds —
-    /// this is the on-chain equivalent of Guardrail's `on_warn` hook, except
-    /// here skipping it is not an option available to the agent at all.
-    function confirmPendingAdvance(bytes32 invoiceId) external nonReentrant {
+    /// flagged as WARN. Only guardianConfirmer can release these funds.
+    function confirmPendingAdvance(bytes32 invoiceId) external nonReentrant whenNotPaused {
         if (msg.sender != guardianConfirmer) revert NotGuardianConfirmer();
         AdvanceRequest storage advance = advances[invoiceId];
         if (advance.status != AdvanceStatus.PendingConfirmation) revert AdvanceNotPending();
@@ -317,12 +305,8 @@ contract AttestGuardManager is Ownable, ReentrancyGuard {
         emit AdvanceRejected(invoiceId, msg.sender, reason);
     }
 
-    /// @notice Called (by owner, on behalf of the off-chain agent — in a
-    /// full build this would itself be gated by another verified proof of
-    /// the buyer's on-chain repayment) once a supplier has repaid an
-    /// advance in full. Raises their auto-approve cap for next time. This
-    /// is the reputation mechanism: autonomy is earned strictly from
-    /// verified on-chain history, not asserted by the agent.
+    /// @notice Called by owner once a supplier has repaid an advance in
+    /// full. Raises their auto-approve cap for next time.
     function acknowledgeRepayment(bytes32 invoiceId) external onlyOwner {
         AdvanceRequest storage advance = advances[invoiceId];
         if (advance.status != AdvanceStatus.Funded) revert UnknownAdvance();
