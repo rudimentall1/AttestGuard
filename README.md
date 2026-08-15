@@ -29,6 +29,17 @@ caps, daily limits, human confirmation above a threshold) that the agent
 itself cannot bypass, because the check lives in the smart contract, not in
 the agent's process.
 
+```nBuyer confirms delivery         Attestcoin Protocol            AttestGuardManager.sol
+   on source chain      ---->   proves it happened      --->   (on Creditcoin)
+  (TradeConfirmation.sol)       (no oracle operator)            |
+                                                                 |-- within caps? --> auto-fund
+                                                                 |-- over cap?    --> flag for
+                                                                 |                     human guardian
+                                                                 |-- repaid?      --> raise cap
+                                                                        (reputation, earned only
+                                                                         from verified history)
+```
+
 ## Why this, why now, why us
 
 This project is a direct, honest pivot from two earlier projects in this
