@@ -55,8 +55,10 @@ of AI judgment calls - but had no real external data source to act on yet.
 infrastructure.** The Attestcoin Protocol is the missing "real data" half:
 cryptographically verified cross-chain events instead of an API response you
 have to trust. The guardrail-policy half - deterministic caps, human
-confirmation above a threshold, reputation earned only from verified
-history, never from an LLM's opinion - is the safety half. Put together, you
+confirmation above a threshold, and a reputation mechanism intended to be
+driven only by verified repayment history (today: owner-attested pending a
+proof-gated version - see SECURITY.md), never from an LLM's opinion - is the
+safety half. Put together, you
 get an AI agent that can be trusted to move real money, because every
 individual decision it makes is checked by something stronger than itself:
 cryptography on the input side, immutable contract logic on the output side.
@@ -232,6 +234,13 @@ Everything else, including all business logic, the guardrail policy design,
 and the off-chain agent, was written from scratch for this submission,
 informed by (but not copied from) the design lessons of this author's
 earlier Agentic Wallet Guardian and Agent Guardrail projects.
+
+## Security
+
+Threat model, trust boundaries, and known limitations are documented
+plainly in SECURITY.md - including what the Attestcoin
+Protocol guarantees, what the on-chain guardrail policy guarantees, and
+what is intentionally still centralized at this stage.
 
 ## License
 
