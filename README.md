@@ -1,11 +1,11 @@
-﻿# AttestGuard
+# AttestGuard
 
-**AI-agent-gated trade-finance advances on Creditcoin — funded the instant a
+**AI-agent-gated trade-finance advances on Creditcoin вЂ” funded the instant a
 cross-chain event is *cryptographically verified*, never on an oracle's word
 and never on an AI agent's unchecked say-so.**
 
 Built for [BUIDL CTC 2026 Fall](https://dorahacks.io/hackathon/buidl-ctc-2026-fall/detail)
-— primary track **AI**, with direct crossover into **RWA** and **DeFi**
+вЂ” primary track **AI**, with direct crossover into **RWA** and **DeFi**
 (invoice/trade-finance advances are real-world-asset financing by
 definition).
 
@@ -71,7 +71,7 @@ the gap between the pitch and the code more than they punish an honest TODO:
 
 | Component | Status |
 |---|---|
-| AttestGuardManager.sol - full on-chain policy gate (caps, daily limits, WARN/confirm flow, reputation growth on repayment) | Deployed on Creditcoin CC3 testnet, real Hardhat/chai tests passing (6/6) |
+| AttestGuardManager.sol (v2) - full on-chain policy gate plus Pausable circuit breaker and withdrawLiquidity | Deployed on Creditcoin CC3 testnet, real Hardhat/chai tests passing (11/11) |
 | TradeConfirmation.sol - source-chain event emitter | Deployed on Sepolia |
 | Off-chain policy pre-check (policy.ts) | 8/8 unit tests passing - real assertions, real bugs already caught and fixed during writing |
 | LLM risk-note generator (explain.ts) | Written, calls the real Anthropic Messages API when a key is present, degrades to a template note otherwise - deliberately never affects the funding decision |
@@ -84,18 +84,18 @@ Deployed and exercised end-to-end on real public testnets - every address
 and transaction hash below is independently verifiable on-chain:
 
 **Creditcoin CC3 testnet**
-- AttestGuardManager: 0x1Fe931df9325FE1392490a15DAc57bA34f51D6fa
-- EvmV1Decoder (linked library): 0x10dcb66Aa031A7134e70f13C6E79c87a9D222905
-- DemoAdvanceToken (advance payout token, "aUSD"): 0x4D09CdD490c1Ce48BCB6dA5c1A6Bf41E2f5e853D
-- Explorer: https://creditcoin-testnet.blockscout.com/address/0x1Fe931df9325FE1392490a15DAc57bA34f51D6fa
+- AttestGuardManager: 0x0713C48b27CddAb1B79653A76f41703cb375E841
+- EvmV1Decoder (linked library): 0xFf45387a190aAc07C5e5BDfe9C9BD1A5DfCc670d
+- DemoAdvanceToken (advance payout token, "aUSD"): 0xA5027500e0AD358928dDdB04937Fdce6DCfb1d12
+- Explorer: https://creditcoin-testnet.blockscout.com/address/0x0713C48b27CddAb1B79653A76f41703cb375E841
 
 **Ethereum Sepolia (source chain)**
 - TradeConfirmation: 0x8FA8Ef84036D81824A6EAab7C26A6d385c8d005F
 
 **A real end-to-end run, no mocks, no simulation:**
-1. Buyer called confirmDelivery(...) on Sepolia - tx 0xc3435c8c5866582ba41fdefb958b50e2fab2247602b6133c4fb9f2ca031c6e4e (https://sepolia.etherscan.io/tx/0xc3435c8c5866582ba41fdefb958b50e2fab2247602b6133c4fb9f2ca031c6e4e)
+1. Buyer called confirmDelivery(...) on Sepolia - tx 0x81e54eeb36f1b53015a028b683f39e9cbc70e063ee0bd5abb258c0bcfdc9270a (https://sepolia.etherscan.io/tx/0x81e54eeb36f1b53015a028b683f39e9cbc70e063ee0bd5abb258c0bcfdc9270a)
 2. Attestcoin Protocol attested the containing block and generated a Merkle + continuity proof - no oracle operator involved.
-3. That proof was submitted to AttestGuardManager.fundAdvanceFromQuery on Creditcoin - tx 0x29953a1b77eceec073652364adca2ffe09b87daf8425d637c643825721665db2 (https://creditcoin-testnet.blockscout.com/tx/0x29953a1b77eceec073652364adca2ffe09b87daf8425d637c643825721665db2). The contract independently re-verified the proof via the Block Prover precompile, decoded the real transaction bytes, matched the invoice and buyer, and checked the request (300 aUSD against a 1,000 aUSD invoice) against the on-chain guardrail policy.
+3. That proof was submitted to AttestGuardManager.fundAdvanceFromQuery on Creditcoin - tx 0x6066c253810355186a0815cbb3a8e01868d24d82552f12d691cacb09e8c15a3d (https://creditcoin-testnet.blockscout.com/tx/0x6066c253810355186a0815cbb3a8e01868d24d82552f12d691cacb09e8c15a3d). The contract independently re-verified the proof via the Block Prover precompile, decoded the real transaction bytes, matched the invoice and buyer, and checked the request (300 aUSD against a 1,000 aUSD invoice) against the on-chain guardrail policy.
 4. The advance was within DEFAULT_AUTO_APPROVE_CAP, so it auto-funded - no human touched step 3 or 4. Final on-chain status: Funded.
 
 ### Compilation proof
@@ -241,6 +241,13 @@ Threat model, trust boundaries, and known limitations are documented
 plainly in SECURITY.md - including what the Attestcoin
 Protocol guarantees, what the on-chain guardrail policy guarantees, and
 what is intentionally still centralized at this stage.
+
+v2 of AttestGuardManager (the currently deployed version) added two
+findings-driven changes from that review: a Pausable circuit breaker on
+the two functions that move funds, and a withdrawLiquidity escape hatch
+for the owner. The contract owner and guardianConfirmer were also rotated
+to a fresh key after the original deployer key was exposed during
+development - see SECURITY.md for the full write-up.
 
 ## License
 
