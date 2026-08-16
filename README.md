@@ -1,11 +1,11 @@
 # AttestGuard
 
-**AI-agent-gated trade-finance advances on Creditcoin вЂ” funded the instant a
+**AI-agent-gated trade-finance advances on Creditcoin РІР‚вЂќ funded the instant a
 cross-chain event is *cryptographically verified*, never on an oracle's word
 and never on an AI agent's unchecked say-so.**
 
 Built for [BUIDL CTC 2026 Fall](https://dorahacks.io/hackathon/buidl-ctc-2026-fall/detail)
-вЂ” primary track **AI**, with direct crossover into **RWA** and **DeFi**
+РІР‚вЂќ primary track **AI**, with direct crossover into **RWA** and **DeFi**
 (invoice/trade-finance advances are real-world-asset financing by
 definition).
 
@@ -71,7 +71,7 @@ the gap between the pitch and the code more than they punish an honest TODO:
 
 | Component | Status |
 |---|---|
-| AttestGuardManager.sol (v2) - full on-chain policy gate plus Pausable circuit breaker and withdrawLiquidity | Deployed on Creditcoin CC3 testnet, real Hardhat/chai tests passing (11/11) |
+| AttestGuardManager.sol (v2) - full on-chain policy gate plus Pausable circuit breaker and withdrawLiquidity | Deployed on Creditcoin CC3 testnet, real Hardhat/chai tests passing (17/17, including a full mock-precompile e2e suite) |
 | TradeConfirmation.sol - source-chain event emitter | Deployed on Sepolia |
 | Off-chain policy pre-check (policy.ts) | 8/8 unit tests passing - real assertions, real bugs already caught and fixed during writing |
 | LLM risk-note generator (explain.ts) | Written, calls the real Anthropic Messages API when a key is present, degrades to a template note otherwise - deliberately never affects the funding decision |
@@ -211,11 +211,12 @@ already happened before it was started.)
       deploy scripts for real, capture the resulting addresses here.
 - [x] Full end-to-end run on real testnets (event -> proof -> policy gate ->
       funds moved) - see Live deployment.
-- [ ] MockNativeQueryVerifier at 0x0FD2 for a full Hardhat integration
-      test of fundAdvanceFromQuery, including a hand-built
-      encodedTransaction fixture matching EvmV1Decoder's expected layout
-      - the live run above proves the real path works, but the test suite
-      still doesn't cover it in-process.
+- [x] MockNativeQueryVerifier at 0x0FD2 for a full Hardhat integration
+      test of fundAdvanceFromQuery (17/17 tests passing, in
+      contracts-test/AttestGuardManager.e2e.test.ts) - covers auto-fund,
+      WARN-then-confirm, a reverted underlying tx, a mismatched log, replay
+      protection, and Pausable on the real proof-gated path, not just
+      registration in isolation.
 - [ ] Record the demo script above end-to-end and embed the video/GIF here.
 - [ ] Hosted mini-dashboard (reusing the confirmation-UI pattern from Agent
       Guardrail) showing pending/auto-funded/rejected advances with the LLM
