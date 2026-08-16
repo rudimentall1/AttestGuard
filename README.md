@@ -1,11 +1,13 @@
 # AttestGuard
 
-**AI-agent-gated trade-finance advances on Creditcoin РІР‚вЂќ funded the instant a
+**AI-agent-gated trade-finance advances on Creditcoin Р Р†Р вЂљРІР‚Сњ funded the instant a
 cross-chain event is *cryptographically verified*, never on an oracle's word
 and never on an AI agent's unchecked say-so.**
 
+Full technical whitepaper: WHITEPAPER.md
+
 Built for [BUIDL CTC 2026 Fall](https://dorahacks.io/hackathon/buidl-ctc-2026-fall/detail)
-РІР‚вЂќ primary track **AI**, with direct crossover into **RWA** and **DeFi**
+Р Р†Р вЂљРІР‚Сњ primary track **AI**, with direct crossover into **RWA** and **DeFi**
 (invoice/trade-finance advances are real-world-asset financing by
 definition).
 
