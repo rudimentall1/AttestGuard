@@ -68,7 +68,7 @@ async function main() {
   console.log(
     "Advance status is now:",
     advance.status.toString(),
-    "(2=AutoFunded, 3=PendingConfirmation — needs confirmPendingAdvance from the guardian, 4=Funded)"
+    "(3=PendingConfirmation — needs confirmPendingAdvance from the guardian, 4=Funded — either auto-funded or guardian-confirmed, both read as 4 once mined)"
   );
 }
 

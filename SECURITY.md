@@ -25,14 +25,14 @@ What it does NOT guarantee: that the address which triggered the event is
 who your business process expects it to be, or that the event was
 economically meaningful (e.g. someone could deploy their own
 `TradeConfirmation`-shaped contract and confirm "delivery" of nothing).
-That's why `sourceConfirmationContract` (`AttestGuardManager.sol:54`) pins
+That's why `sourceConfirmationContract` pins
 the manager to trust events from exactly one, owner-registered contract —
 not any contract shaped like it.
 
 ### 2. What the on-chain guardrail policy guarantees
 
 Even given a genuinely verified event, `_applyPolicyAndMaybeFund`
-(`AttestGuardManager.sol:266`) independently re-derives whether funding is
+independently re-derives whether funding is
 appropriate: per-advance cap, per-supplier daily cap, global max. This is
 enforced in the contract itself, so a compromised or buggy off-chain agent
 can at worst fail to submit a good advance — it cannot force a bad one
@@ -52,26 +52,34 @@ through.
   that gap (e.g. supplier/buyer self-registration with staking, or
   KYC-gated onboarding) is roadmap, not shipped.
 - **`acknowledgeRepayment` is `onlyOwner`**, not gated by a verified proof
-  of the buyer's actual repayment (`AttestGuardManager.sol:326`). The
+  of the buyer's actual repayment. The
   reputation mechanism (auto-approve cap growth) currently trusts the
   owner's word about repayment having happened. This is stated in the
   function's own NatSpec comment. Treat "reputation earned from verified
   history" as aspirational until this is proof-gated too.
 - **The `DeliveryConfirmed` event's `supplier` and `amount` fields are not
   cross-checked** against the registered advance
-  (`AttestGuardManager.sol:237-260` only checks `invoiceId` and `buyer`
+  (`_validateDeliveryEvent` only checks `invoiceId` and `buyer`
   from the event topics). Funding always uses the amount and supplier from
   the *registered* advance, never from the event data — so this isn't
   exploitable, but a reviewer will reasonably ask why those fields exist
   unchecked, so it's documented here explicitly rather than left for
   someone to discover.
-- **No `Pausable` circuit breaker and no vault withdrawal path.** If a
-  policy bug were found post-deployment, there is currently no way to halt
-  `fundAdvanceFromQuery` short of the owner refusing to register new
-  advances (already-registered ones with a valid proof could still be
-  funded). Liquidity deposited via `depositLiquidity` also has no return
-  path if never drawn down. Both are planned for the next contract
-  revision — see the repository roadmap.
+- **`withdrawLiquidity` is intentionally unrestricted beyond `onlyOwner`.**
+  v2 added a `Pausable` circuit breaker (`pause()`/`unpause()`, gating
+  `fundAdvanceFromQuery` and `confirmPendingAdvance` specifically - the two
+  functions that move funds out of the vault, not registration or
+  rejection) and `withdrawLiquidity(uint256 amount)`, a plain
+  owner-only transfer back from the vault. Together these mean a policy
+  bug found post-deployment has a real, immediate mitigation, and
+  deposited liquidity is no longer a one-way door - see
+  `docs/adr/0004-v2-pausable-and-withdraw.md` for the full reasoning.
+  What `withdrawLiquidity` does NOT have is per-depositor accounting: it
+  trusts the owner the same way `depositLiquidity` already does, and can
+  drain the whole vault regardless of which advances are pending. That's
+  acceptable for pooled demo/testnet liquidity; a production deployment
+  with third-party liquidity providers would need real depositor-share
+  accounting, which is out of scope for this version.
 
 ## Key hygiene note
 
