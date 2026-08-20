@@ -265,7 +265,6 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
         bool withinDailyCap = suppliersFundedToday[supplier] + amount <= perSupplierDailyCap;
 
         if (withinAutoCap && withinDailyCap) {
-            advance.status = AdvanceStatus.AutoFunded;
             suppliersFundedToday[supplier] += amount;
             ADVANCE_TOKEN.safeTransfer(supplier, amount);
             advance.status = AdvanceStatus.Funded;

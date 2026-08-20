@@ -13,14 +13,12 @@ import { ethers } from "hardhat";
  * guardrail policy (caps, daily limits, human-confirmation flow) behave
  * exactly as claimed.
  *
- * Known gap, flagged honestly rather than hidden: the tests below cover
- * registration and access control, but NOT the full
- * `fundAdvanceFromQuery` happy path (auto-fund, WARN, and repayment ->
- * higher cap), because that requires a MockNativeQueryVerifier deployed at
- * the fixed precompile address 0x0FD2 plus a hand-built encodedTransaction
- * fixture matching EvmV1Decoder's expected byte layout. That mock + fixture
- * is the single highest-value addition to this test suite before a real
- * demo and is called out explicitly in the README roadmap.
+ * This file covers registration and access control. The full
+ * `fundAdvanceFromQuery` happy path (auto-fund, WARN-then-confirm, a
+ * reverted underlying tx, a mismatched log, replay protection, and
+ * Pausable on the real proof-gated path) is covered separately in
+ * AttestGuardManager.e2e.test.ts, using the same MockNativeQueryVerifier
+ * approach. Together: 17/17 tests passing (11 here + 6 there).
  */
 describe("AttestGuardManager", function () {
   async function deployFixture() {
