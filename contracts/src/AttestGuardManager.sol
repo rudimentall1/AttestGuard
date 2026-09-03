@@ -249,6 +249,10 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
             if (log.topics.length < 3) continue;
             if (log.topics[1] != advance.invoiceId) continue;
             if (address(uint160(uint256(log.topics[2]))) != advance.buyer) continue;
+
+            (address eventSupplier, ) = abi.decode(log.data, (address, uint256));
+            if (eventSupplier != advance.supplier) continue;
+
             matched = true;
             break;
         }
@@ -392,7 +396,9 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
             if (log.topics[1] != advance.invoiceId) continue;
             if (address(uint160(uint256(log.topics[2]))) != advance.buyer) continue;
 
-            (, uint256 amount) = abi.decode(log.data, (address, uint256));
+            (address eventSupplier, uint256 amount) = abi.decode(log.data, (address, uint256));
+            if (eventSupplier != advance.supplier) continue;
+
             return amount;
         }
         revert NoMatchingRepaymentEvent();
