@@ -76,18 +76,32 @@ async function handleDeliveryConfirmed(
     return;
   }
 
+  // The source event is only a trigger for proof acquisition. For all
+  // underwriting/history inputs, use the registered on-chain identity as the
+  // authoritative supplier/buyer. This prevents a malformed or mismatched
+  // event from influencing advisory AI reasoning before the contract's proof
+  // validator gets the final say.
+  if (event.buyer.toLowerCase() !== onChainAdvance.buyer.toLowerCase()) {
+    console.warn(`[worker] buyer mismatch for ${event.invoiceId}; skipping advisory processing`);
+    return;
+  }
+  if (event.supplier.toLowerCase() !== onChainAdvance.supplier.toLowerCase()) {
+    console.warn(`[worker] supplier mismatch for ${event.invoiceId}; skipping advisory processing`);
+    return;
+  }
+
   const request: AdvanceRequest = {
     invoiceId: event.invoiceId,
-    supplier: event.supplier,
-    buyer: event.buyer,
+    supplier: onChainAdvance.supplier,
+    buyer: onChainAdvance.buyer,
     invoiceAmount: onChainAdvance.invoiceAmount,
     requestedAdvanceAmount: onChainAdvance.requestedAdvanceAmount,
   };
 
   const history = await loadVerifiedSupplierHistory(
     manager,
-    event.supplier,
-    event.buyer,
+    request.supplier,
+    request.buyer,
     {
       fromBlock: cfg.historyFromBlock,
       toBlock: await manager.runner!.provider!.getBlockNumber(),
