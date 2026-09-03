@@ -225,9 +225,6 @@ function applyDeterministicEnvelope(
     riskFlags.push("MODEL_RECOMMENDATION_EXCEEDED_DETERMINISTIC_ENVELOPE");
   }
 
-  // Relationship evidence is a deterministic floor, not an AI preference.
-  // A model cannot claim tier A when the chain-derived history is absent,
-  // incomplete, or shows no repayment despite prior advances.
   const minimumTier = minimumRiskTier(evidence);
   if (riskTierRank(riskTier) < riskTierRank(minimumTier)) {
     riskTier = minimumTier;
@@ -251,7 +248,7 @@ function applyDeterministicEnvelope(
       recommendedAdvance: 0n,
       riskTier: "D",
       confidenceBps: raw.confidenceBps,
-      reasonCodes: [...new Set([...reasonCodes, "POLICY_OVERRIDE_REQUIRED"])],
+      reasonCodes: [...new Set<UnderwritingReason>([...reasonCodes, "POLICY_OVERRIDE_REQUIRED"])],
       riskFlags: [...new Set([...riskFlags, "VERIFICATION_REQUIRED_BEFORE_ADVANCE"])],
       evidenceHash,
       modelId: "anthropic",
