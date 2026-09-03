@@ -101,12 +101,13 @@ describe("AttestGuardManager - acknowledgeRepaymentFromQuery (verified repayment
     await ethers.provider.send("hardhat_setCode", [PRECOMPILE_ADDRESS, mockCode]);
 
     const invoiceId = ethers.id("repayment-test-invoice");
+    const invoiceAmount = ethers.parseEther("1000");
     const requestedAdvanceAmount = ethers.parseEther("300");
     await manager.registerAdvance(
       invoiceId,
       supplier.address,
       buyer.address,
-      ethers.parseEther("1000"),
+      invoiceAmount,
       requestedAdvanceAmount,
       "funded, ready for repayment testing"
     );
@@ -114,7 +115,7 @@ describe("AttestGuardManager - acknowledgeRepaymentFromQuery (verified repayment
     const fundingLog = {
       address: sourceConfirmationContract,
       topics: [DELIVERY_CONFIRMED_SIGNATURE, invoiceId, ethers.zeroPadValue(buyer.address, 32)],
-      data: "0x",
+      data: abiCoder.encode(["address", "uint256"], [supplier.address, ethers.parseEther("1000")]),
     };
     const fundingTx = buildEncodedTransaction({
       from: buyer.address,
@@ -287,6 +288,37 @@ describe("AttestGuardManager - acknowledgeRepaymentFromQuery (verified repayment
     ).to.be.revertedWithCustomError(manager, "NoMatchingRepaymentEvent");
   });
 
+  it("rejects a repayment proof whose event supplier is not the registered supplier", async function () {
+    const { manager, supplier, buyer, other, sourceConfirmationContract, invoiceId, requestedAdvanceAmount } =
+      await deployFixtureWithFundedAdvance();
+
+    const capBefore = await manager.autoApproveCap(supplier.address);
+    const wrongSupplierTx = buildEncodedTransaction({
+      from: buyer.address,
+      to: sourceConfirmationContract,
+      receiptStatus: 1,
+      logs: [
+        repaymentLog({
+          sourceConfirmationContract,
+          invoiceId,
+          buyer: buyer.address,
+          supplier: other.address,
+          amount: requestedAdvanceAmount,
+        }),
+      ],
+    });
+
+    await expect(
+      manager.acknowledgeRepaymentFromQuery(
+        invoiceId, 3n, wrongSupplierTx, fakeRoot("wrong-repayment-supplier-case"), [], ethers.ZeroHash, []
+      )
+    ).to.be.revertedWithCustomError(manager, "NoMatchingRepaymentEvent");
+
+    expect(await manager.autoApproveCap(supplier.address)).to.equal(capBefore);
+    const advance = await manager.getAdvance(invoiceId);
+    expect(advance.status).to.equal(4n);
+  });
+
   it("rejects a proof whose underlying transaction reverted", async function () {
     const { manager, supplier, buyer, sourceConfirmationContract, invoiceId, requestedAdvanceAmount } =
       await deployFixtureWithFundedAdvance();
@@ -311,8 +343,7 @@ describe("AttestGuardManager - acknowledgeRepaymentFromQuery (verified repayment
   });
 
   it("rejects a DeliveryConfirmed-shaped log as a repayment proof - the two event signatures must not be confusable", async function () {
-    const { manager, supplier, buyer, sourceConfirmationContract, invoiceId, requestedAdvanceAmount } =
-      await deployFixtureWithFundedAdvance();
+    const { manager, supplier, buyer, sourceConfirmationContract, invoiceId } = await deployFixtureWithFundedAdvance();
 
     const deliveryShapedTx = buildEncodedTransaction({
       from: buyer.address,
@@ -335,13 +366,6 @@ describe("AttestGuardManager - acknowledgeRepaymentFromQuery (verified repayment
   });
 
   it("enforces replay protection: the same proof root cannot acknowledge repayment for two different invoices", async function () {
-    // Reusing the same invoiceId to test this doesn't work: after the
-    // first successful call, that invoice's status is Repaid, not Funded
-    // any more, so a second call on it reverts with UnknownAdvance from
-    // the state check - before the code ever reaches processedQueries.
-    // To actually exercise the replay-protection mapping (not just the
-    // state machine), we need a second, independently Funded invoice and
-    // reuse the same proof root against it.
     const { manager, supplier, buyer, sourceConfirmationContract, invoiceId, requestedAdvanceAmount } =
       await deployFixtureWithFundedAdvance();
 
@@ -355,7 +379,7 @@ describe("AttestGuardManager - acknowledgeRepaymentFromQuery (verified repayment
       logs: [{
         address: sourceConfirmationContract,
         topics: [DELIVERY_CONFIRMED_SIGNATURE, invoiceId2, ethers.zeroPadValue(buyer.address, 32)],
-        data: "0x",
+        data: abiCoder.encode(["address", "uint256"], [supplier.address, ethers.parseEther("1000")]),
       }],
     });
     await manager.fundAdvanceFromQuery(
@@ -372,9 +396,6 @@ describe("AttestGuardManager - acknowledgeRepaymentFromQuery (verified repayment
     });
     await manager.acknowledgeRepaymentFromQuery(invoiceId, 1n, repaymentTx1, root, [], ethers.ZeroHash, []);
 
-    // Same chainKey/blockHeight/root -> same queryId. invoiceId2 is still
-    // legitimately Funded, so this attempt fails on replay protection
-    // specifically, not on the state check.
     const repaymentTx2 = buildEncodedTransaction({
       from: buyer.address, to: sourceConfirmationContract, receiptStatus: 1,
       logs: [repaymentLog({
@@ -388,7 +409,7 @@ describe("AttestGuardManager - acknowledgeRepaymentFromQuery (verified repayment
   });
 
   it("cannot be replayed against a second invoice either, even reusing the same proof root", async function () {
-    const { manager, supplier, buyer, sourceConfirmationContract, invoiceId, requestedAdvanceAmount, other } =
+    const { manager, supplier, buyer, sourceConfirmationContract, invoiceId, requestedAdvanceAmount } =
       await deployFixtureWithFundedAdvance();
 
     const invoiceId2 = ethers.id("repayment-test-invoice-2");
@@ -401,7 +422,7 @@ describe("AttestGuardManager - acknowledgeRepaymentFromQuery (verified repayment
       logs: [{
         address: sourceConfirmationContract,
         topics: [DELIVERY_CONFIRMED_SIGNATURE, invoiceId2, ethers.zeroPadValue(buyer.address, 32)],
-        data: "0x",
+        data: abiCoder.encode(["address", "uint256"], [supplier.address, ethers.parseEther("1000")]),
       }],
     });
     const sameRoot = fakeRoot("cross-invoice-replay-root");

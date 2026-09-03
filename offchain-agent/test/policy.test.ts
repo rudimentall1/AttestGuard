@@ -65,18 +65,18 @@ test("warns when funding would breach the supplier's daily cap even under the pe
   assert.match(decision.reason, /daily cap/);
 });
 
-test("warns on any buyer with a prior default, regardless of amount", () => {
+test("blocks a buyer with a prior default because the evidence is not enforced on-chain", () => {
   const decision = evaluateAdvancePolicy(
     baseRequest({ requestedAdvanceAmount: 50n }),
     baseHistory({ priorDefaultsWithThisBuyer: 1 })
   );
-  assert.equal(decision.verdict, "WARN");
-  assert.match(decision.reason, /prior default/);
+  assert.equal(decision.verdict, "BLOCK");
+  assert.match(decision.reason, /automatic funding is disabled/);
 });
 
-test("warns (does not silently auto-approve) the very first advance tied to a new buyer relationship", () => {
+test("blocks the very first advance tied to a new buyer relationship", () => {
   const decision = evaluateAdvancePolicy(baseRequest(), baseHistory({ priorAdvancesWithThisBuyer: 0 }));
-  assert.equal(decision.verdict, "WARN");
+  assert.equal(decision.verdict, "BLOCK");
   assert.match(decision.reason, /first advance/);
 });
 
@@ -85,6 +85,6 @@ test("a defaulted buyer takes priority over an otherwise-clean cap check", () =>
     baseRequest({ requestedAdvanceAmount: 5000n, invoiceAmount: 20000n }),
     baseHistory({ autoApproveCap: 10000n, perSupplierDailyCap: 10000n, priorDefaultsWithThisBuyer: 2 })
   );
-  assert.equal(decision.verdict, "WARN");
+  assert.equal(decision.verdict, "BLOCK");
   assert.match(decision.reason, /prior default/);
 });

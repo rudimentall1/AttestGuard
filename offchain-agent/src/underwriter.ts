@@ -21,6 +21,12 @@ const REASON_CODES = new Set<UnderwritingReason>([
 ]);
 
 const RISK_TIERS = new Set<RiskTier>(["A", "B", "C", "D"]);
+const RELATIONSHIP_REASON_CODES: UnderwritingReason[] = [
+  "STRONG_REPAYMENT_HISTORY",
+  "LIMITED_REPAYMENT_HISTORY",
+  "DEFAULT_HISTORY",
+  "NEW_BUYER_RELATIONSHIP",
+];
 
 export interface UnderwriterOptions {
   anthropicApiKey?: string;
@@ -43,7 +49,8 @@ interface RawModelProposal {
  * The model sees only structured evidence and returns a proposal. It never
  * returns an authorization verdict and it cannot override verified facts.
  * The deterministic envelope below caps the recommendation by invoice value,
- * supplier auto-approve cap, and remaining daily capacity.
+ * supplier auto-approve cap, and remaining daily capacity, and also imposes
+ * a deterministic risk-tier floor from verified relationship evidence.
  *
  * Critical invariant: if delivery or proof verification is false, the
  * proposal is forced fail-closed to zero advance / risk tier D regardless of
@@ -116,7 +123,9 @@ export function hashEvidence(evidence: UnderwritingEvidence): string {
       fundedToday: evidence.history.fundedToday.toString(),
       perSupplierDailyCap: evidence.history.perSupplierDailyCap.toString(),
       priorAdvancesWithThisBuyer: evidence.history.priorAdvancesWithThisBuyer,
+      priorRepaymentsWithThisBuyer: evidence.history.priorRepaymentsWithThisBuyer,
       priorDefaultsWithThisBuyer: evidence.history.priorDefaultsWithThisBuyer,
+      historyComplete: evidence.history.historyComplete,
     },
     deliveryVerified: evidence.deliveryVerified,
     proofVerified: evidence.proofVerified,
@@ -149,7 +158,9 @@ function buildPrompt(evidence: UnderwritingEvidence): string {
       supplierFundedToday: evidence.history.fundedToday.toString(),
       supplierDailyCap: evidence.history.perSupplierDailyCap.toString(),
       priorAdvancesWithBuyer: evidence.history.priorAdvancesWithThisBuyer,
+      priorRepaymentsWithBuyer: evidence.history.priorRepaymentsWithThisBuyer,
       priorDefaultsWithBuyer: evidence.history.priorDefaultsWithThisBuyer,
+      historyComplete: evidence.history.historyComplete,
       invoiceAgeSeconds: evidence.invoiceAgeSeconds,
     },
   });
@@ -204,15 +215,25 @@ function applyDeterministicEnvelope(
     remainingDaily
   );
 
-  let recommendedAdvance = modelAmount > hardMax ? hardMax : modelAmount;
+  const recommendedAdvance = modelAmount > hardMax ? hardMax : modelAmount;
   let riskTier = raw.riskTier as RiskTier;
-  const reasonCodes = new Set<UnderwritingReason>(raw.reasonCodes as UnderwritingReason[]);
+  // Model reason codes are advisory input only. Every factual reason code in
+  // the final proposal is reconstructed from verified evidence below, so the
+  // model cannot manufacture a false audit trail by selecting a reason code.
+  const reasonCodes = new Set<UnderwritingReason>();
   const riskFlags = [...raw.riskFlags];
 
   if (modelAmount > hardMax) {
     reasonCodes.add("POLICY_OVERRIDE_REQUIRED");
     riskFlags.push("MODEL_RECOMMENDATION_EXCEEDED_DETERMINISTIC_ENVELOPE");
   }
+
+  const minimumTier = minimumRiskTier(evidence);
+  if (riskTierRank(riskTier) < riskTierRank(minimumTier)) {
+    riskTier = minimumTier;
+    riskFlags.push("MODEL_RISK_TIER_BELOW_EVIDENCE_FLOOR");
+  }
+  addEvidenceReasonCodes(evidence, recommendedAdvance, reasonCodes, riskFlags);
 
   const verificationFailed = !evidence.deliveryVerified || !evidence.proofVerified;
   if (!evidence.deliveryVerified) {
@@ -224,10 +245,19 @@ function applyDeterministicEnvelope(
     riskFlags.push("PROOF_NOT_VERIFIED");
   }
   if (verificationFailed) {
-    recommendedAdvance = 0n;
-    riskTier = "D";
-    reasonCodes.add("POLICY_OVERRIDE_REQUIRED");
-    riskFlags.push("VERIFICATION_REQUIRED_BEFORE_ADVANCE");
+    return {
+      proposalVersion: 1,
+      invoiceId: evidence.request.invoiceId,
+      recommendedAdvance: 0n,
+      riskTier: "D",
+      confidenceBps: raw.confidenceBps,
+      reasonCodes: [...new Set<UnderwritingReason>([...reasonCodes, "POLICY_OVERRIDE_REQUIRED"])],
+      riskFlags: [...new Set([...riskFlags, "VERIFICATION_REQUIRED_BEFORE_ADVANCE"])],
+      evidenceHash,
+      modelId: "anthropic",
+      modelVersion: model,
+      generatedAt,
+    };
   }
 
   return {
@@ -283,10 +313,14 @@ function deterministicFallback(
     reasons.push("DEFAULT_HISTORY");
     flags.push("PRIOR_DEFAULTS");
     riskTier = "D";
-  } else if (evidence.history.priorAdvancesWithThisBuyer === 0) {
+  } else if (!evidence.history.historyComplete || evidence.history.priorAdvancesWithThisBuyer === 0) {
     reasons.push("NEW_BUYER_RELATIONSHIP");
     flags.push("LIMITED_REPAYMENT_HISTORY");
+    if (!evidence.history.historyComplete) flags.push("HISTORY_INCOMPLETE");
     riskTier = "C";
+  } else if (evidence.history.priorRepaymentsWithThisBuyer === 0) {
+    reasons.push("LIMITED_REPAYMENT_HISTORY");
+    riskTier = "B";
   } else {
     reasons.push("STRONG_REPAYMENT_HISTORY");
   }
@@ -316,12 +350,65 @@ function deterministicFallback(
     riskTier,
     confidenceBps: 5000,
     reasonCodes: [...new Set(reasons)],
-    riskFlags: flags,
+    riskFlags: [...new Set(flags)],
     evidenceHash,
     modelId: "deterministic-fallback",
     modelVersion: "v1",
     generatedAt,
   };
+}
+
+function minimumRiskTier(evidence: UnderwritingEvidence): RiskTier {
+  if (evidence.history.priorDefaultsWithThisBuyer > 0) return "D";
+  if (!evidence.history.historyComplete || evidence.history.priorAdvancesWithThisBuyer === 0) return "C";
+  if (evidence.history.priorRepaymentsWithThisBuyer === 0) return "B";
+  return "A";
+}
+
+function riskTierRank(tier: RiskTier): number {
+  return { A: 0, B: 1, C: 2, D: 3 }[tier];
+}
+
+function addEvidenceReasonCodes(
+  evidence: UnderwritingEvidence,
+  recommendedAdvance: bigint,
+  reasonCodes: Set<UnderwritingReason>,
+  riskFlags: string[]
+): void {
+  if (evidence.deliveryVerified) reasonCodes.add("DELIVERY_VERIFIED");
+  if (evidence.proofVerified) reasonCodes.add("PROOF_VERIFIED");
+
+  if (recommendedAdvance <= evidence.request.invoiceAmount) {
+    reasonCodes.add("WITHIN_INVOICE_VALUE");
+  }
+  if (recommendedAdvance <= evidence.history.autoApproveCap) {
+    reasonCodes.add("WITHIN_SUPPLIER_CAP");
+  }
+  if (evidence.history.priorAdvancesWithThisBuyer === 0) {
+    reasonCodes.add("LOW_EXISTING_EXPOSURE");
+  }
+  if (evidence.request.requestedAdvanceAmount > evidence.request.invoiceAmount / 2n) {
+    reasonCodes.add("LARGE_REQUEST");
+  }
+
+  for (const reasonCode of RELATIONSHIP_REASON_CODES) {
+    reasonCodes.delete(reasonCode);
+  }
+
+  if (evidence.history.priorDefaultsWithThisBuyer > 0) {
+    reasonCodes.add("DEFAULT_HISTORY");
+    riskFlags.push("PRIOR_DEFAULTS");
+  } else if (!evidence.history.historyComplete) {
+    reasonCodes.add("LIMITED_REPAYMENT_HISTORY");
+    riskFlags.push("HISTORY_INCOMPLETE");
+  } else if (evidence.history.priorAdvancesWithThisBuyer === 0) {
+    reasonCodes.add("NEW_BUYER_RELATIONSHIP");
+    riskFlags.push("LIMITED_REPAYMENT_HISTORY");
+  } else if (evidence.history.priorRepaymentsWithThisBuyer === 0) {
+    reasonCodes.add("LIMITED_REPAYMENT_HISTORY");
+  } else {
+    reasonCodes.add("STRONG_REPAYMENT_HISTORY");
+  }
 }
 
 function minBigInt(...values: bigint[]): bigint {
