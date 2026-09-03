@@ -21,6 +21,12 @@ const REASON_CODES = new Set<UnderwritingReason>([
 ]);
 
 const RISK_TIERS = new Set<RiskTier>(["A", "B", "C", "D"]);
+const RELATIONSHIP_REASON_CODES: UnderwritingReason[] = [
+  "STRONG_REPAYMENT_HISTORY",
+  "LIMITED_REPAYMENT_HISTORY",
+  "DEFAULT_HISTORY",
+  "NEW_BUYER_RELATIONSHIP",
+];
 
 export interface UnderwriterOptions {
   anthropicApiKey?: string;
@@ -368,6 +374,10 @@ function addEvidenceReasonCodes(
   reasonCodes: Set<UnderwritingReason>,
   riskFlags: string[]
 ): void {
+  for (const reasonCode of RELATIONSHIP_REASON_CODES) {
+    reasonCodes.delete(reasonCode);
+  }
+
   if (evidence.history.priorDefaultsWithThisBuyer > 0) {
     reasonCodes.add("DEFAULT_HISTORY");
     riskFlags.push("PRIOR_DEFAULTS");
