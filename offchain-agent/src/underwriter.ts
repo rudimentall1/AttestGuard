@@ -44,6 +44,10 @@ interface RawModelProposal {
  * returns an authorization verdict and it cannot override verified facts.
  * The deterministic envelope below caps the recommendation by invoice value,
  * supplier auto-approve cap, and remaining daily capacity.
+ *
+ * Critical invariant: if delivery or proof verification is false, the
+ * proposal is forced fail-closed to zero advance / risk tier D regardless of
+ * what the model returned. The on-chain manager remains the final authority.
  */
 export async function underwrite(
   evidence: UnderwritingEvidence,
@@ -93,9 +97,6 @@ export async function underwrite(
     const validated = validateRawProposal(raw);
     return applyDeterministicEnvelope(evidence, validated, evidenceHash, model, now());
   } catch {
-    // AI failure is fail-closed for the AI layer, but does not alter the
-    // existing deterministic funding path. A deterministic proposal keeps
-    // the audit trail useful when the model is unavailable.
     return deterministicFallback(evidence, evidenceHash, now());
   }
 }
@@ -165,6 +166,9 @@ function validateRawProposal(raw: RawModelProposal): RawModelProposal {
   if (typeof raw.recommendedAdvance !== "string" && typeof raw.recommendedAdvance !== "number") {
     throw new Error("invalid recommendedAdvance");
   }
+  if (typeof raw.recommendedAdvance === "number" && !Number.isSafeInteger(raw.recommendedAdvance)) {
+    throw new Error("numeric recommendedAdvance must be a safe integer");
+  }
 
   const amount = BigInt(raw.recommendedAdvance);
   if (amount < 0n) throw new Error("recommendedAdvance cannot be negative");
@@ -200,7 +204,8 @@ function applyDeterministicEnvelope(
     remainingDaily
   );
 
-  const recommendedAdvance = modelAmount > hardMax ? hardMax : modelAmount;
+  let recommendedAdvance = modelAmount > hardMax ? hardMax : modelAmount;
+  let riskTier = raw.riskTier as RiskTier;
   const reasonCodes = new Set<UnderwritingReason>(raw.reasonCodes as UnderwritingReason[]);
   const riskFlags = [...raw.riskFlags];
 
@@ -209,6 +214,7 @@ function applyDeterministicEnvelope(
     riskFlags.push("MODEL_RECOMMENDATION_EXCEEDED_DETERMINISTIC_ENVELOPE");
   }
 
+  const verificationFailed = !evidence.deliveryVerified || !evidence.proofVerified;
   if (!evidence.deliveryVerified) {
     reasonCodes.delete("DELIVERY_VERIFIED");
     riskFlags.push("DELIVERY_NOT_VERIFIED");
@@ -217,12 +223,18 @@ function applyDeterministicEnvelope(
     reasonCodes.delete("PROOF_VERIFIED");
     riskFlags.push("PROOF_NOT_VERIFIED");
   }
+  if (verificationFailed) {
+    recommendedAdvance = 0n;
+    riskTier = "D";
+    reasonCodes.add("POLICY_OVERRIDE_REQUIRED");
+    riskFlags.push("VERIFICATION_REQUIRED_BEFORE_ADVANCE");
+  }
 
   return {
     proposalVersion: 1,
     invoiceId: evidence.request.invoiceId,
     recommendedAdvance,
-    riskTier: raw.riskTier as RiskTier,
+    riskTier,
     confidenceBps: raw.confidenceBps,
     reasonCodes: [...reasonCodes],
     riskFlags: [...new Set(riskFlags)],
@@ -244,6 +256,28 @@ function deterministicFallback(
 
   if (evidence.deliveryVerified) reasons.push("DELIVERY_VERIFIED");
   if (evidence.proofVerified) reasons.push("PROOF_VERIFIED");
+
+  const verificationFailed = !evidence.deliveryVerified || !evidence.proofVerified;
+  if (verificationFailed) {
+    reasons.push("POLICY_OVERRIDE_REQUIRED");
+    if (!evidence.deliveryVerified) flags.push("DELIVERY_NOT_VERIFIED");
+    if (!evidence.proofVerified) flags.push("PROOF_NOT_VERIFIED");
+    flags.push("VERIFICATION_REQUIRED_BEFORE_ADVANCE");
+
+    return {
+      proposalVersion: 1,
+      invoiceId: evidence.request.invoiceId,
+      recommendedAdvance: 0n,
+      riskTier: "D",
+      confidenceBps: 5000,
+      reasonCodes: [...new Set(reasons)],
+      riskFlags: [...new Set(flags)],
+      evidenceHash,
+      modelId: "deterministic-fallback",
+      modelVersion: "v1",
+      generatedAt,
+    };
+  }
 
   if (evidence.history.priorDefaultsWithThisBuyer > 0) {
     reasons.push("DEFAULT_HISTORY");
