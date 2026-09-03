@@ -105,25 +105,20 @@ describe("AttestGuardManager - full fundAdvanceFromQuery path (mock precompile)"
 
     return { owner, supplier, buyer, guardian, other, token, manager, sourceConfirmationContract };
   }
+
   it("auto-funds an advance end-to-end when the proof and amount are both within policy", async function () {
     const { manager, token, supplier, buyer, sourceConfirmationContract } = await deployFixture();
 
     const invoiceId = ethers.id("e2e-invoice-auto");
+    const invoiceAmount = ethers.parseEther("1000");
     const amount = ethers.parseEther("300");
-    await manager.registerAdvance(
-      invoiceId,
-      supplier.address,
-      buyer.address,
-      ethers.parseEther("1000"),
-      amount,
-      "e2e happy path"
-    );
+    await manager.registerAdvance(invoiceId, supplier.address, buyer.address, invoiceAmount, amount, "e2e happy path");
 
     const encodedTransaction = buildEncodedTransaction({
       from: buyer.address,
       to: sourceConfirmationContract,
       receiptStatus: 1,
-      logs: [deliveryLog({ sourceConfirmationContract, invoiceId, buyer: buyer.address, supplier: supplier.address, amount })],
+      logs: [deliveryLog({ sourceConfirmationContract, invoiceId, buyer: buyer.address, supplier: supplier.address, amount: invoiceAmount })],
     });
 
     const root = fakeRoot("auto-fund-case");
@@ -141,21 +136,15 @@ describe("AttestGuardManager - full fundAdvanceFromQuery path (mock precompile)"
     const { manager, token, supplier, buyer, guardian, sourceConfirmationContract } = await deployFixture();
 
     const invoiceId = ethers.id("e2e-invoice-warn");
+    const invoiceAmount = ethers.parseEther("4000");
     const amount = ethers.parseEther("4000");
-    await manager.registerAdvance(
-      invoiceId,
-      supplier.address,
-      buyer.address,
-      ethers.parseEther("4000"),
-      amount,
-      "e2e warn path"
-    );
+    await manager.registerAdvance(invoiceId, supplier.address, buyer.address, invoiceAmount, amount, "e2e warn path");
 
     const encodedTransaction = buildEncodedTransaction({
       from: buyer.address,
       to: sourceConfirmationContract,
       receiptStatus: 1,
-      logs: [deliveryLog({ sourceConfirmationContract, invoiceId, buyer: buyer.address, supplier: supplier.address, amount })],
+      logs: [deliveryLog({ sourceConfirmationContract, invoiceId, buyer: buyer.address, supplier: supplier.address, amount: invoiceAmount })],
     });
 
     const root = fakeRoot("warn-case");
@@ -177,14 +166,15 @@ describe("AttestGuardManager - full fundAdvanceFromQuery path (mock precompile)"
     const { manager, supplier, buyer, sourceConfirmationContract } = await deployFixture();
 
     const invoiceId = ethers.id("e2e-invoice-failed-tx");
+    const invoiceAmount = ethers.parseEther("100");
     const amount = ethers.parseEther("50");
-    await manager.registerAdvance(invoiceId, supplier.address, buyer.address, ethers.parseEther("100"), amount, "should not fund - underlying tx failed");
+    await manager.registerAdvance(invoiceId, supplier.address, buyer.address, invoiceAmount, amount, "should not fund - underlying tx failed");
 
     const encodedTransaction = buildEncodedTransaction({
       from: buyer.address,
       to: sourceConfirmationContract,
       receiptStatus: 0,
-      logs: [deliveryLog({ sourceConfirmationContract, invoiceId, buyer: buyer.address, supplier: supplier.address, amount })],
+      logs: [deliveryLog({ sourceConfirmationContract, invoiceId, buyer: buyer.address, supplier: supplier.address, amount: invoiceAmount })],
     });
 
     await expect(
@@ -196,14 +186,15 @@ describe("AttestGuardManager - full fundAdvanceFromQuery path (mock precompile)"
     const { manager, supplier, buyer, sourceConfirmationContract } = await deployFixture();
 
     const invoiceId = ethers.id("e2e-invoice-mismatch");
+    const invoiceAmount = ethers.parseEther("100");
     const amount = ethers.parseEther("50");
-    await manager.registerAdvance(invoiceId, supplier.address, buyer.address, ethers.parseEther("100"), amount, "should not fund - log is for a different invoice");
+    await manager.registerAdvance(invoiceId, supplier.address, buyer.address, invoiceAmount, amount, "should not fund - log is for a different invoice");
 
     const encodedTransaction = buildEncodedTransaction({
       from: buyer.address,
       to: sourceConfirmationContract,
       receiptStatus: 1,
-      logs: [deliveryLog({ sourceConfirmationContract, invoiceId: ethers.id("some-other-invoice"), buyer: buyer.address, supplier: supplier.address, amount })],
+      logs: [deliveryLog({ sourceConfirmationContract, invoiceId: ethers.id("some-other-invoice"), buyer: buyer.address, supplier: supplier.address, amount: invoiceAmount })],
     });
 
     await expect(
@@ -215,14 +206,15 @@ describe("AttestGuardManager - full fundAdvanceFromQuery path (mock precompile)"
     const { manager, supplier, buyer, other, sourceConfirmationContract } = await deployFixture();
 
     const invoiceId = ethers.id("e2e-invoice-wrong-supplier");
+    const invoiceAmount = ethers.parseEther("100");
     const amount = ethers.parseEther("50");
-    await manager.registerAdvance(invoiceId, supplier.address, buyer.address, ethers.parseEther("100"), amount, "supplier binding");
+    await manager.registerAdvance(invoiceId, supplier.address, buyer.address, invoiceAmount, amount, "supplier binding");
 
     const encodedTransaction = buildEncodedTransaction({
       from: buyer.address,
       to: sourceConfirmationContract,
       receiptStatus: 1,
-      logs: [deliveryLog({ sourceConfirmationContract, invoiceId, buyer: buyer.address, supplier: other.address, amount })],
+      logs: [deliveryLog({ sourceConfirmationContract, invoiceId, buyer: buyer.address, supplier: other.address, amount: invoiceAmount })],
     });
 
     await expect(
@@ -230,14 +222,61 @@ describe("AttestGuardManager - full fundAdvanceFromQuery path (mock precompile)"
     ).to.be.revertedWithCustomError(manager, "NoMatchingDeliveryEvent");
   });
 
+  it("rejects a DeliveryConfirmed proof whose event amount does not match the registered invoice amount", async function () {
+    const { manager, supplier, buyer, sourceConfirmationContract } = await deployFixture();
+
+    const invoiceId = ethers.id("e2e-invoice-wrong-delivery-amount");
+    const invoiceAmount = ethers.parseEther("1000");
+    const requestedAdvanceAmount = ethers.parseEther("300");
+    await manager.registerAdvance(
+      invoiceId,
+      supplier.address,
+      buyer.address,
+      invoiceAmount,
+      requestedAdvanceAmount,
+      "delivery amount binding"
+    );
+
+    const encodedTransaction = buildEncodedTransaction({
+      from: buyer.address,
+      to: sourceConfirmationContract,
+      receiptStatus: 1,
+      logs: [
+        deliveryLog({
+          sourceConfirmationContract,
+          invoiceId,
+          buyer: buyer.address,
+          supplier: supplier.address,
+          amount: requestedAdvanceAmount,
+        }),
+      ],
+    });
+
+    await expect(
+      manager.fundAdvanceFromQuery(
+        invoiceId,
+        1n,
+        encodedTransaction,
+        fakeRoot("wrong-delivery-amount-case"),
+        [],
+        ethers.ZeroHash,
+        []
+      )
+    ).to.be.revertedWithCustomError(manager, "DeliveryAmountMismatch");
+
+    const advance = await manager.getAdvance(invoiceId);
+    expect(advance.status).to.equal(1n);
+  });
+
   it("enforces replay protection: the same proof cannot fund twice", async function () {
     const { manager, supplier, buyer, sourceConfirmationContract } = await deployFixture();
 
     const invoiceId1 = ethers.id("e2e-invoice-replay-1");
     const invoiceId2 = ethers.id("e2e-invoice-replay-2");
+    const invoiceAmount = ethers.parseEther("100");
     const amount = ethers.parseEther("50");
     for (const id of [invoiceId1, invoiceId2]) {
-      await manager.registerAdvance(id, supplier.address, buyer.address, ethers.parseEther("100"), amount, "replay test");
+      await manager.registerAdvance(id, supplier.address, buyer.address, invoiceAmount, amount, "replay test");
     }
 
     const sameRoot = fakeRoot("replay-case");
@@ -246,7 +285,7 @@ describe("AttestGuardManager - full fundAdvanceFromQuery path (mock precompile)"
       from: buyer.address,
       to: sourceConfirmationContract,
       receiptStatus: 1,
-      logs: [deliveryLog({ sourceConfirmationContract, invoiceId: invoiceId1, buyer: buyer.address, supplier: supplier.address, amount })],
+      logs: [deliveryLog({ sourceConfirmationContract, invoiceId: invoiceId1, buyer: buyer.address, supplier: supplier.address, amount: invoiceAmount })],
     });
 
     await manager.fundAdvanceFromQuery(invoiceId1, 1n, encodedTransaction1, sameRoot, [], ethers.ZeroHash, []);
@@ -255,7 +294,7 @@ describe("AttestGuardManager - full fundAdvanceFromQuery path (mock precompile)"
       from: buyer.address,
       to: sourceConfirmationContract,
       receiptStatus: 1,
-      logs: [deliveryLog({ sourceConfirmationContract, invoiceId: invoiceId2, buyer: buyer.address, supplier: supplier.address, amount })],
+      logs: [deliveryLog({ sourceConfirmationContract, invoiceId: invoiceId2, buyer: buyer.address, supplier: supplier.address, amount: invoiceAmount })],
     });
 
     await expect(
@@ -267,8 +306,9 @@ describe("AttestGuardManager - full fundAdvanceFromQuery path (mock precompile)"
     const { manager, supplier, buyer, sourceConfirmationContract } = await deployFixture();
 
     const invoiceId = ethers.id("e2e-invoice-paused");
+    const invoiceAmount = ethers.parseEther("100");
     const amount = ethers.parseEther("50");
-    await manager.registerAdvance(invoiceId, supplier.address, buyer.address, ethers.parseEther("100"), amount, "should not fund while paused");
+    await manager.registerAdvance(invoiceId, supplier.address, buyer.address, invoiceAmount, amount, "should not fund while paused");
 
     await manager.pause();
 
@@ -276,7 +316,7 @@ describe("AttestGuardManager - full fundAdvanceFromQuery path (mock precompile)"
       from: buyer.address,
       to: sourceConfirmationContract,
       receiptStatus: 1,
-      logs: [deliveryLog({ sourceConfirmationContract, invoiceId, buyer: buyer.address, supplier: supplier.address, amount })],
+      logs: [deliveryLog({ sourceConfirmationContract, invoiceId, buyer: buyer.address, supplier: supplier.address, amount: invoiceAmount })],
     });
 
     await expect(
