@@ -83,7 +83,7 @@ test("caps a model recommendation above the deterministic envelope", async () =>
   assert.ok(proposal.riskFlags.includes("MODEL_RECOMMENDATION_EXCEEDED_DETERMINISTIC_ENVELOPE"));
 });
 
-test("cannot use AI claims to turn unverified delivery into verified evidence", async () => {
+test("unverified facts force zero advance and tier D regardless of AI claims", async () => {
   const proposal = await underwrite(evidence({ deliveryVerified: false, proofVerified: false }), {
     anthropicApiKey: "test-key",
     fetchFn: mockAnthropic({
@@ -95,10 +95,41 @@ test("cannot use AI claims to turn unverified delivery into verified evidence", 
     }),
   });
 
+  assert.equal(proposal.recommendedAdvance, 0n);
+  assert.equal(proposal.riskTier, "D");
   assert.ok(!proposal.reasonCodes.includes("DELIVERY_VERIFIED"));
   assert.ok(!proposal.reasonCodes.includes("PROOF_VERIFIED"));
+  assert.ok(proposal.reasonCodes.includes("POLICY_OVERRIDE_REQUIRED"));
   assert.ok(proposal.riskFlags.includes("DELIVERY_NOT_VERIFIED"));
   assert.ok(proposal.riskFlags.includes("PROOF_NOT_VERIFIED"));
+  assert.ok(proposal.riskFlags.includes("VERIFICATION_REQUIRED_BEFORE_ADVANCE"));
+});
+
+test("deterministic fallback also fails closed when proof is missing", async () => {
+  const proposal = await underwrite(evidence({ proofVerified: false }), {
+    now: () => 1_700_000_000,
+  });
+
+  assert.equal(proposal.modelId, "deterministic-fallback");
+  assert.equal(proposal.recommendedAdvance, 0n);
+  assert.equal(proposal.riskTier, "D");
+  assert.ok(proposal.riskFlags.includes("PROOF_NOT_VERIFIED"));
+});
+
+test("rejects unsafe numeric amounts and fails back safely", async () => {
+  const proposal = await underwrite(evidence(), {
+    anthropicApiKey: "test-key",
+    fetchFn: mockAnthropic({
+      recommendedAdvance: Number.MAX_SAFE_INTEGER + 1,
+      riskTier: "A",
+      confidenceBps: 8000,
+      reasonCodes: ["DELIVERY_VERIFIED", "PROOF_VERIFIED"],
+      riskFlags: [],
+    }),
+  });
+
+  assert.equal(proposal.modelId, "deterministic-fallback");
+  assert.equal(proposal.recommendedAdvance, 400n);
 });
 
 test("rejects invalid model confidence and fails back safely", async () => {
