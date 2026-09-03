@@ -41,8 +41,12 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     bytes32 public constant DELIVERY_CONFIRMED_SIGNATURE =
         0xaa1f52eabee6b1038832c601bbe7c91743c29566c1bb8da851a5bcdc2e35b8f3;
 
-    /// @notice The only source-chain contract whose DeliveryConfirmed events
-    /// we accept.
+    /// @dev keccak256("RepaymentConfirmed(bytes32,address,address,uint256)")
+    bytes32 public constant REPAYMENT_CONFIRMED_SIGNATURE =
+        0x618d544cb0d3a5e6e353b1dad5e4173f73d3190e5e5a40359d9e9b49b2e6fb16;
+
+    /// @notice The only source-chain contract whose DeliveryConfirmed and
+    /// RepaymentConfirmed events we accept.
     address public sourceConfirmationContract;
     uint64 public sourceChainKey;
 
@@ -87,6 +91,8 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     error ProofVerificationFailed();
     error TransactionDidNotSucceed();
     error NoMatchingDeliveryEvent();
+    error NoMatchingRepaymentEvent();
+    error RepaymentAmountTooLow(uint256 provided, uint256 required);
     error UnknownAdvance();
     error AdvanceNotPending();
     error NotGuardianConfirmer();
@@ -304,11 +310,53 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
         emit AdvanceRejected(invoiceId, msg.sender, reason);
     }
 
-    /// @notice Called by owner once a supplier has repaid an advance in
-    /// full. Raises their auto-approve cap for next time.
-    function acknowledgeRepayment(bytes32 invoiceId) external onlyOwner {
+    /// @notice Called once a buyer's RepaymentConfirmed event for this
+    /// invoice has been cryptographically proven on the source chain - the
+    /// same proof-gated pattern as fundAdvanceFromQuery, not owner
+    /// discretion. This is deliberately NOT onlyOwner: exactly like
+    /// funding, the verified proof is what authorizes this call, not the
+    /// identity of whoever submits it. Anyone (typically the off-chain
+    /// agent) can call this once they have a valid proof; the contract
+    /// re-derives everything itself and does not trust the caller's word
+    /// on any of it.
+    ///
+    /// This closes the gap documented in docs/adr/0005: previously,
+    /// acknowledgeRepayment was a plain onlyOwner call with no proof
+    /// requirement, meaning supplier reputation (autoApproveCap growth)
+    /// was owner-attested, not cryptographically verified - inconsistent
+    /// with how funding itself works. It no longer is.
+    function acknowledgeRepaymentFromQuery(
+        bytes32 invoiceId,
+        uint64 blockHeight,
+        bytes calldata encodedTransaction,
+        bytes32 merkleRoot,
+        INativeQueryVerifier.MerkleProofEntry[] calldata siblings,
+        bytes32 lowerEndpointDigest,
+        bytes32[] calldata continuityRoots
+    ) external nonReentrant whenNotPaused {
         AdvanceRequest storage advance = advances[invoiceId];
         if (advance.status != AdvanceStatus.Funded) revert UnknownAdvance();
+
+        uint256 txIndex = VERIFIER.calculateTxIndex(
+            INativeQueryVerifier.MerkleProof({root: merkleRoot, siblings: siblings})
+        );
+        bytes32 queryId = keccak256(abi.encodePacked(sourceChainKey, blockHeight, txIndex));
+        if (processedQueries[queryId]) revert QueryAlreadyProcessed();
+
+        bool verified = VERIFIER.verifyAndEmit(
+            sourceChainKey,
+            blockHeight,
+            encodedTransaction,
+            INativeQueryVerifier.MerkleProof({root: merkleRoot, siblings: siblings}),
+            INativeQueryVerifier.ContinuityProof({lowerEndpointDigest: lowerEndpointDigest, roots: continuityRoots})
+        );
+        if (!verified) revert ProofVerificationFailed();
+        processedQueries[queryId] = true;
+
+        uint256 repaidAmount = _validateRepaymentEvent(encodedTransaction, advance);
+        if (repaidAmount < advance.requestedAdvanceAmount) {
+            revert RepaymentAmountTooLow(repaidAmount, advance.requestedAdvanceAmount);
+        }
 
         advance.status = AdvanceStatus.Repaid;
         uint256 newCap = autoApproveCap[advance.supplier] + AUTO_APPROVE_CAP_GROWTH_PER_REPAYMENT;
@@ -316,6 +364,38 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
 
         emit RepaymentAcknowledged(invoiceId, advance.supplier, newCap);
         emit AutoApproveCapUpdated(advance.supplier, newCap);
+    }
+
+    /// @dev Mirrors _validateDeliveryEvent's structure exactly, but looks
+    /// for REPAYMENT_CONFIRMED_SIGNATURE instead of DELIVERY_CONFIRMED_SIGNATURE,
+    /// and - unlike delivery confirmation - actually decodes and returns the
+    /// event's amount field, because the repayment amount is the whole
+    /// point of this check (see docs/adr/0006 for why this differs from the
+    /// delivery path, where the event's amount is deliberately ignored).
+    function _validateRepaymentEvent(bytes memory encodedTransaction, AdvanceRequest storage advance)
+        internal view returns (uint256 repaidAmount)
+    {
+        uint8 txType = EvmV1Decoder.getTransactionType(encodedTransaction);
+        require(EvmV1Decoder.isValidTransactionType(txType), "Unsupported transaction type");
+
+        EvmV1Decoder.ReceiptFields memory receipt = EvmV1Decoder.decodeReceiptFields(encodedTransaction);
+        if (receipt.receiptStatus != 1) revert TransactionDidNotSucceed();
+
+        EvmV1Decoder.LogEntry[] memory logs =
+            EvmV1Decoder.getLogsByEventSignature(receipt, REPAYMENT_CONFIRMED_SIGNATURE);
+        if (logs.length == 0) revert NoMatchingRepaymentEvent();
+
+        for (uint256 i = 0; i < logs.length; i++) {
+            EvmV1Decoder.LogEntry memory log = logs[i];
+            if (log.address_ != sourceConfirmationContract) continue;
+            if (log.topics.length < 3) continue;
+            if (log.topics[1] != advance.invoiceId) continue;
+            if (address(uint160(uint256(log.topics[2]))) != advance.buyer) continue;
+
+            (, uint256 amount) = abi.decode(log.data, (address, uint256));
+            return amount;
+        }
+        revert NoMatchingRepaymentEvent();
     }
 
     function _rollDailyBucketIfNeeded(address supplier) internal {
