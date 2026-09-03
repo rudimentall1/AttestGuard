@@ -1,25 +1,6 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
-/**
- * These tests exercise AttestGuardManager's on-chain policy gate directly,
- * WITHOUT going through the real Attestcoin proof-verification path (that
- * requires the live Block Prover precompile, which only exists on an actual
- * Creditcoin node — it is not present in the Hardhat in-memory EVM). To make
- * that possible, the suite deploys a MockNativeQueryVerifier at the
- * precompile's fixed address (0x0FD2) that always reports proofs as valid,
- * so what's actually under test here is the part that matters most for a
- * hackathon judge to trust: given a "verified" event, does the on-chain
- * guardrail policy (caps, daily limits, human-confirmation flow) behave
- * exactly as claimed.
- *
- * This file covers registration and access control. The full
- * `fundAdvanceFromQuery` happy path (auto-fund, WARN-then-confirm, a
- * reverted underlying tx, a mismatched log, replay protection, and
- * Pausable on the real proof-gated path) is covered separately in
- * AttestGuardManager.e2e.test.ts, using the same MockNativeQueryVerifier
- * approach. Together: 17/17 tests passing (11 here + 6 there).
- */
 describe("AttestGuardManager", function () {
   async function deployFixture() {
     const [owner, supplier, buyer, guardian, other] = await ethers.getSigners();
@@ -48,6 +29,19 @@ describe("AttestGuardManager", function () {
     await manager.depositLiquidity(ethers.parseEther("100000"));
 
     return { owner, supplier, buyer, guardian, other, token, manager };
+  }
+
+  async function registerDefaultAdvance(manager: any, supplier: any, buyer: any, name = "invoice") {
+    const invoiceId = ethers.id(name);
+    await manager.registerAdvance(
+      invoiceId,
+      supplier.address,
+      buyer.address,
+      ethers.parseEther("1000"),
+      ethers.parseEther("400"),
+      "clean history, well within cap"
+    );
+    return invoiceId;
   }
 
   it("registers an advance in the Registered state", async function () {
@@ -143,6 +137,65 @@ describe("AttestGuardManager", function () {
   it("prevents a non-owner from withdrawing liquidity", async function () {
     const { manager, other } = await deployFixture();
     await expect(manager.connect(other).withdrawLiquidity(ethers.parseEther("1"))).to.be.reverted;
+  });
+
+  it("records one underwriting decision hash against a registered invoice", async function () {
+    const { manager, supplier, buyer } = await deployFixture();
+    const invoiceId = await registerDefaultAdvance(manager, supplier, buyer, "decision-record");
+    const decisionHash = ethers.id("decision-v1");
+
+    await expect(manager.recordUnderwritingDecision(invoiceId, decisionHash))
+      .to.emit(manager, "UnderwritingDecisionRecorded")
+      .withArgs(invoiceId, decisionHash);
+
+    expect(await manager.underwritingDecisionHash(invoiceId)).to.equal(decisionHash);
+    expect((await manager.getAdvance(invoiceId)).status).to.equal(1n);
+  });
+
+  it("rejects an empty underwriting decision hash", async function () {
+    const { manager, supplier, buyer } = await deployFixture();
+    const invoiceId = await registerDefaultAdvance(manager, supplier, buyer, "decision-empty");
+
+    await expect(manager.recordUnderwritingDecision(invoiceId, ethers.ZeroHash))
+      .to.be.revertedWith("Empty decision hash");
+  });
+
+  it("rejects recording the underwriting decision twice", async function () {
+    const { manager, supplier, buyer } = await deployFixture();
+    const invoiceId = await registerDefaultAdvance(manager, supplier, buyer, "decision-replay");
+    const firstHash = ethers.id("decision-first");
+    const secondHash = ethers.id("decision-second");
+
+    await manager.recordUnderwritingDecision(invoiceId, firstHash);
+    await expect(manager.recordUnderwritingDecision(invoiceId, secondHash))
+      .to.be.revertedWith("Decision already recorded");
+    expect(await manager.underwritingDecisionHash(invoiceId)).to.equal(firstHash);
+  });
+
+  it("rejects underwriting decision recording from a non-owner", async function () {
+    const { manager, supplier, buyer, other } = await deployFixture();
+    const invoiceId = await registerDefaultAdvance(manager, supplier, buyer, "decision-owner");
+
+    await expect(manager.connect(other).recordUnderwritingDecision(invoiceId, ethers.id("decision")))
+      .to.be.reverted;
+  });
+
+  it("rejects underwriting decision recording for an unknown invoice", async function () {
+    const { manager } = await deployFixture();
+    await expect(manager.recordUnderwritingDecision(ethers.id("unknown"), ethers.id("decision")))
+      .to.be.revertedWithCustomError(manager, "AdvanceNotPending");
+  });
+
+  it("keeps the recorded decision hash independent from deterministic policy caps", async function () {
+    const { manager, supplier, buyer } = await deployFixture();
+    const invoiceId = await registerDefaultAdvance(manager, supplier, buyer, "decision-policy");
+    const decisionHash = ethers.id("permissive-ai-decision");
+
+    await manager.recordUnderwritingDecision(invoiceId, decisionHash);
+    await manager.setGlobalMaxAdvance(ethers.parseEther("300"));
+
+    expect(await manager.underwritingDecisionHash(invoiceId)).to.equal(decisionHash);
+    expect(await manager.globalMaxAdvance()).to.equal(ethers.parseEther("300"));
   });
 
   it("blocks fundAdvanceFromQuery-path functions while paused, without blocking registration", async function () {
