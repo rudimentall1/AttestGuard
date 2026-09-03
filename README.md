@@ -80,30 +80,47 @@ the gap between the pitch and the code more than they punish an honest TODO:
 | Off-chain policy pre-check (policy.ts) | 8/8 unit tests passing - real assertions, real bugs already caught and fixed during writing |
 | LLM risk-note / underwriting layer | Calls the real Anthropic Messages API when a key is present; deterministic fallback otherwise; never has funding authority |
 | Off-chain worker (worker.ts) - event watcher, proof fetch/retry loop, submission | Written and typechecks against the real @gluwa/usc-sdk API |
-| Full end-to-end flow: Sepolia event -> Attestcoin proof -> on-chain policy gate -> funds moved | Done, live, on real testnets for the deployed v2 flow. See Live deployment below. |
+| Full end-to-end flow: Sepolia event -> Attestcoin proof -> on-chain policy gate -> funds moved | Previous v2 flow was live; fresh deployment below is the current target for the new decision-hash trail |
 
 ### Live deployment
 
-Deployed and exercised end-to-end on real public testnets — every address
-and transaction hash below is independently verifiable on-chain. These
-addresses describe the currently documented **v2 deployment**; the newer
-proof-gated repayment code must not be represented as deployed there until a
-fresh deployment is actually performed and its address is recorded.
+A fresh Creditcoin CC3 testnet deployment was completed on 2026-09-03 from
+the current `main` codebase. The deployment consists of a new demo payout token,
+the linked EvmV1Decoder library, and a new AttestGuardManager containing the
+one-time on-chain underwriting decision commitment.
 
-**Creditcoin CC3 testnet**
-- AttestGuardManager: 0x0713C48b27CddAb1B79653A76f41703cb375E841
-- EvmV1Decoder (linked library): 0xFf45387a190aAc07C5e5BDfe9C9BD1A5DfCc670d
-- DemoAdvanceToken (advance payout token, "aUSD"): 0xA5027500e0AD358928dDdB04937Fdce6DCfb1d12
-- Explorer: https://creditcoin-testnet.blockscout.com/address/0x0713C48b27CddAb1B79653A76f41703cb375E841
+**Creditcoin CC3 testnet — fresh deployment**
+- AttestGuardManager: `0x7d73424a8256C0b2BA245e5d5a3De8820E45F390`
+- EvmV1Decoder (linked library): `0x73b647cbA2FE75Ba05B8e12ef8F8D6327D6367bF`
+- DemoAdvanceToken (advance payout token, "aUSD"): `0xAE519FC2Ba8e6fFE6473195c092bF1BAe986ff90`
+- Explorer: https://creditcoin-testnet.blockscout.com/address/0x7d73424a8256C0b2BA245e5d5a3De8820E45F390
+- Source chain key: `1`
+- Global max advance: `5000` aUSD
+- Per-supplier daily cap: `2000` aUSD
+
+The previous documented manager (`0x0713C48b27CddAb1B79653A76f41703cb375E841`) is superseded by this deployment for the current demo. Do not use the old manager address for the new decision-hash trail.
 
 **Ethereum Sepolia (source chain)**
-- TradeConfirmation: 0x8FA8Ef84036D81824A6EAab7C26A6d385c8d005F
+- TradeConfirmation: `0x8FA8Ef84036D81824A6EAab7C26A6d385c8d005F`
 
-**A real end-to-end run, no mocks, no simulation:**
-1. Buyer called `confirmDelivery(...)` on Sepolia — tx 0x81e54eeb36f1b53015a028b683f39e9cbc70e063ee0bd5abb258c0bcfdc9270a.
-2. Attestcoin Protocol attested the containing block and generated a Merkle + continuity proof — no oracle operator involved.
-3. That proof was submitted to `AttestGuardManager.fundAdvanceFromQuery` on Creditcoin — tx 0x6066c253810355186a0815cbb3a8e01868d24d82552f12d691cacb09e8c15a3d. The contract independently re-verified the proof, decoded the real transaction bytes, matched the invoice and buyer, and checked the request (300 aUSD against a 1,000 aUSD invoice) against the on-chain guardrail policy.
-4. The advance was within `DEFAULT_AUTO_APPROVE_CAP`, so it auto-funded — no human touched the funding path. Final on-chain status: Funded.
+**Decision-hash trail**
+
+The fresh manager includes `recordUnderwritingDecision(invoiceId, decisionHash)`
+and emits `UnderwritingDecisionRecorded`. The off-chain worker computes a
+stable SHA-256 decision identity from the underwriting proposal and records it
+before submitting the proof-gated funding transaction. The contract stores the
+commitment for auditability; it does not independently reconstruct or verify
+the off-chain SHA-256 payload.
+
+**Previous real end-to-end run**
+1. Buyer called `confirmDelivery(...)` on Sepolia — tx `0x81e54eeb36f1b53015a028b683f39e9cbc70e063ee0bd5abb258c0bcfdc9270a`.
+2. Attestcoin Protocol attested the containing block and generated a Merkle + continuity proof.
+3. That proof was submitted to the previous `AttestGuardManager.fundAdvanceFromQuery` deployment — tx `0x6066c253810355186a0815cbb3a8e01868d24d82552f12d691cacb09e8c15a3d`.
+4. The advance auto-funded under the deterministic on-chain policy.
+
+A fresh E2E transaction trail for the new manager will be recorded here after
+registration, liquidity funding, and a new source-chain delivery event are
+completed against this deployment.
 
 ### Compilation proof
 
@@ -234,10 +251,8 @@ SECURITY.md. The current design deliberately keeps invoice registration as an
 explicit admin trust boundary while making delivery verification, funding
 policy enforcement, and repayment verification independently auditable.
 
-The documented live deployment above is the v2 deployment. Do not infer from
-it that the newer proof-gated repayment or buyer-history code is already
-installed at that address; a fresh deployment is required before making that
-claim.
+The current documented manager is the fresh 2026-09-03 deployment above. The
+older manager remains in history as a previous demo deployment only.
 
 The project also documents a historical testnet key-hygiene incident: the
 original deployer key was exposed during development and owner/guardian keys
