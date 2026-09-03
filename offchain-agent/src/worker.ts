@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { Contract, ethers } from "ethers";
-import { chainInfo, blockProver, proofProvider } from "@gluwa/usc-sdk";
+import { chainInfo, proofProvider } from "@gluwa/usc-sdk";
 
 import managerAbi from "../../contracts/abi/AttestGuardManager.json" with { type: "json" };
 import tradeAbi from "../../contracts/abi/TradeConfirmation.json" with { type: "json" };
@@ -8,7 +8,8 @@ import { evaluateAdvancePolicy } from "./policy.js";
 import { explainDecision } from "./explain.js";
 import { routeReview } from "./routing.js";
 import { underwrite } from "./underwriter.js";
-import type { AdvanceRequest, SupplierHistory, UnderwritingEvidence } from "./types.js";
+import { loadVerifiedSupplierHistory } from "./history.js";
+import type { AdvanceRequest, UnderwritingEvidence } from "./types.js";
 
 /**
  * AttestGuard off-chain agent.
@@ -19,16 +20,15 @@ import type { AdvanceRequest, SupplierHistory, UnderwritingEvidence } from "./ty
  *   2. Once Creditcoin has attested the block containing that event,
  *      fetch an inclusion proof via the Attestcoin Prover service.
  *   3. Run the deterministic policy pre-check and produce a bounded AI
- *      underwriting proposal from the verified evidence.
+ *      underwriting proposal from verified evidence and on-chain history.
  *   4. Derive a monotonic review route: AI may escalate human attention but
  *      can never weaken a deterministic WARN/BLOCK decision.
  *   5. Submit the proof to AttestGuardManager.fundAdvanceFromQuery — where
  *      the *real*, unbypassable policy check happens on-chain.
  *
- * The AI underwriter and review routing are advisory: they can recommend and
- * explain risk, but they cannot authorize funding, override verified facts,
- * or exceed/weaken the deterministic policy envelope. The smart contract
- * remains authoritative.
+ * The AI underwriter, history index and review routing are advisory. They
+ * cannot authorize funding, override verified facts, or exceed/weaken the
+ * deterministic policy envelope. The smart contract remains authoritative.
  */
 
 interface WorkerConfig {
@@ -40,6 +40,7 @@ interface WorkerConfig {
   sourceTradeConfirmationAddress: string;
   sourceChainKey: number;
   pollIntervalMs: number;
+  historyFromBlock: number;
 }
 
 function loadConfig(): WorkerConfig {
@@ -58,29 +59,7 @@ function loadConfig(): WorkerConfig {
     sourceTradeConfirmationAddress: required("SOURCE_TRADE_CONFIRMATION_ADDRESS"),
     sourceChainKey: Number(process.env.SOURCE_CHAIN_KEY ?? "1"),
     pollIntervalMs: Number(process.env.POLL_INTERVAL_MS ?? "15000"),
-  };
-}
-
-// Placeholder history lookup. In a full build this reads the manager
-// contract's own on-chain state (autoApproveCap, suppliersFundedToday) plus
-// an off-chain buyer-relationship index. Kept separate and pluggable so it
-// can be swapped for a real data source without touching policy.ts or
-// worker.ts's control flow.
-async function loadSupplierHistory(manager: Contract, supplier: string, buyer: string): Promise<SupplierHistory> {
-  const autoApproveCap: bigint = await manager.autoApproveCap(supplier);
-  const dailyCap: bigint = await manager.perSupplierDailyCap();
-  const fundedToday: bigint = await manager.suppliersFundedToday(supplier);
-
-  return {
-    supplier,
-    autoApproveCap,
-    fundedToday,
-    perSupplierDailyCap: dailyCap,
-    // TODO(production): back these with a real buyer-relationship index
-    // (e.g. a subgraph over past AdvanceConfirmed/RepaymentAcknowledged
-    // events) instead of hardcoded placeholders.
-    priorAdvancesWithThisBuyer: 1,
-    priorDefaultsWithThisBuyer: 0,
+    historyFromBlock: Number(process.env.HISTORY_FROM_BLOCK ?? "0"),
   };
 }
 
@@ -105,9 +84,20 @@ async function handleDeliveryConfirmed(
     requestedAdvanceAmount: onChainAdvance.requestedAdvanceAmount,
   };
 
-  const history = await loadSupplierHistory(manager, event.supplier, event.buyer);
+  const history = await loadVerifiedSupplierHistory(
+    manager,
+    event.supplier,
+    event.buyer,
+    {
+      fromBlock: cfg.historyFromBlock,
+      toBlock: await manager.runner!.provider!.getBlockNumber(),
+    }
+  );
   const decision = evaluateAdvancePolicy(request, history);
   const note = await explainDecision(request, history, decision);
+  console.log(
+    `[worker] verified relationship history: prior advances=${history.priorAdvancesWithThisBuyer} prior repayments=${history.priorRepaymentsWithThisBuyer} prior defaults=${history.priorDefaultsWithThisBuyer}`
+  );
   console.log(`[worker] policy pre-check: ${decision.verdict} — ${decision.reason}`);
   console.log(`[worker] risk note: ${note}`);
 
