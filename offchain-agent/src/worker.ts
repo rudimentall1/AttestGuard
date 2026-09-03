@@ -114,6 +114,7 @@ async function getProofWithRetry(
 async function handleDeliveryConfirmed(
   cfg: WorkerConfig,
   manager: Contract,
+  creditcoinWallet: ethers.Wallet,
   event: DeliveryEvent
 ) {
   console.log(`[worker] DeliveryConfirmed for invoice ${event.invoiceId} (tx ${event.txHash})`);
@@ -188,7 +189,7 @@ async function handleDeliveryConfirmed(
   const routing = routeReview(request, decision, underwriting);
   console.log(`[worker] review route: ${routing.route} — ${routing.reason}`);
 
-  const decisionRecorder = new Contract(cfg.managerAddress, underwritingDecisionAbi, creditcoinWalletFor(manager));
+  const decisionRecorder = new Contract(cfg.managerAddress, underwritingDecisionAbi, creditcoinWallet);
   const recordTx = await decisionRecorder.recordUnderwritingDecision(event.invoiceId, decisionHash);
   const recordReceipt = await recordTx.wait();
   console.log(`[worker] recorded underwriting decision on-chain, tx hash: ${recordReceipt?.hash}`);
@@ -204,14 +205,6 @@ async function handleDeliveryConfirmed(
   );
   const receipt = await submitTx.wait();
   console.log(`[worker] submitted fundAdvanceFromQuery, tx hash: ${receipt?.hash}`);
-}
-
-function creditcoinWalletFor(manager: Contract): ethers.Wallet {
-  const signer = manager.runner;
-  if (!(signer instanceof ethers.Wallet)) {
-    throw new Error("AttestGuard manager signer must be an ethers.Wallet");
-  }
-  return signer;
 }
 
 async function main() {
@@ -247,7 +240,7 @@ async function main() {
       if (Date.now() < item.nextRetryAt) continue;
 
       try {
-        await handleDeliveryConfirmed(cfg, manager, item.event);
+        await handleDeliveryConfirmed(cfg, manager, creditcoinWallet, item.event);
         pending.delete(invoiceId);
         if (item.attempts > 0) {
           console.log(`[worker] RECOVERED invoice ${invoiceId} after ${item.attempts} retry cycle(s)`);
