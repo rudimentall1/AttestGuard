@@ -101,12 +101,13 @@ describe("AttestGuardManager - acknowledgeRepaymentFromQuery (verified repayment
     await ethers.provider.send("hardhat_setCode", [PRECOMPILE_ADDRESS, mockCode]);
 
     const invoiceId = ethers.id("repayment-test-invoice");
+    const invoiceAmount = ethers.parseEther("1000");
     const requestedAdvanceAmount = ethers.parseEther("300");
     await manager.registerAdvance(
       invoiceId,
       supplier.address,
       buyer.address,
-      ethers.parseEther("1000"),
+      invoiceAmount,
       requestedAdvanceAmount,
       "funded, ready for repayment testing"
     );
@@ -114,7 +115,7 @@ describe("AttestGuardManager - acknowledgeRepaymentFromQuery (verified repayment
     const fundingLog = {
       address: sourceConfirmationContract,
       topics: [DELIVERY_CONFIRMED_SIGNATURE, invoiceId, ethers.zeroPadValue(buyer.address, 32)],
-      data: abiCoder.encode(["address", "uint256"], [supplier.address, requestedAdvanceAmount]),
+      data: abiCoder.encode(["address", "uint256"], [supplier.address, ethers.parseEther("1000")]),
     };
     const fundingTx = buildEncodedTransaction({
       from: buyer.address,
@@ -378,7 +379,7 @@ describe("AttestGuardManager - acknowledgeRepaymentFromQuery (verified repayment
       logs: [{
         address: sourceConfirmationContract,
         topics: [DELIVERY_CONFIRMED_SIGNATURE, invoiceId2, ethers.zeroPadValue(buyer.address, 32)],
-        data: abiCoder.encode(["address", "uint256"], [supplier.address, requestedAdvanceAmount]),
+        data: abiCoder.encode(["address", "uint256"], [supplier.address, ethers.parseEther("1000")]),
       }],
     });
     await manager.fundAdvanceFromQuery(
@@ -421,7 +422,7 @@ describe("AttestGuardManager - acknowledgeRepaymentFromQuery (verified repayment
       logs: [{
         address: sourceConfirmationContract,
         topics: [DELIVERY_CONFIRMED_SIGNATURE, invoiceId2, ethers.zeroPadValue(buyer.address, 32)],
-        data: abiCoder.encode(["address", "uint256"], [supplier.address, requestedAdvanceAmount]),
+        data: abiCoder.encode(["address", "uint256"], [supplier.address, ethers.parseEther("1000")]),
       }],
     });
     const sameRoot = fakeRoot("cross-invoice-replay-root");
