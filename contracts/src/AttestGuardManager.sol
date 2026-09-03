@@ -30,6 +30,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     uint64 public sourceChainKey;
 
     mapping(bytes32 => AdvanceRequest) public advances;
+    mapping(bytes32 => bytes32) public underwritingDecisionHash;
     IERC20 public immutable ADVANCE_TOKEN;
 
     mapping(address => uint256) public autoApproveCap;
@@ -53,6 +54,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     event AutoApproveCapUpdated(address indexed supplier, uint256 newCap);
     event GuardianConfirmerUpdated(address indexed newGuardian);
     event LiquidityWithdrawn(address indexed to, uint256 amount);
+    event UnderwritingDecisionRecorded(bytes32 indexed invoiceId, bytes32 indexed decisionHash);
 
     error QueryAlreadyProcessed();
     error ProofVerificationFailed();
@@ -130,6 +132,19 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
             emit AutoApproveCapUpdated(supplier, DEFAULT_AUTO_APPROVE_CAP);
         }
         emit AdvanceRegistered(invoiceId, supplier, buyer, requestedAdvanceAmount);
+    }
+
+    /// @notice Records the bounded underwriting decision associated with an invoice.
+    /// This is an auditable one-time commitment. The contract does not claim to
+    /// cryptographically verify the off-chain AI output itself; proof verification
+    /// and deterministic funding policy remain independent on-chain controls.
+    function recordUnderwritingDecision(bytes32 invoiceId, bytes32 decisionHash) external onlyOwner {
+        AdvanceRequest storage advance = advances[invoiceId];
+        if (advance.status != AdvanceStatus.Registered) revert AdvanceNotPending();
+        require(decisionHash != bytes32(0), "Empty decision hash");
+        require(underwritingDecisionHash[invoiceId] == bytes32(0), "Decision already recorded");
+        underwritingDecisionHash[invoiceId] = decisionHash;
+        emit UnderwritingDecisionRecorded(invoiceId, decisionHash);
     }
 
     function fundAdvanceFromQuery(
@@ -217,13 +232,9 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
         AdvanceRequest storage advance = advances[invoiceId];
         if (advance.status != AdvanceStatus.PendingConfirmation) revert AdvanceNotPending();
 
-        // Policy can change while an item is waiting for review. Re-check the
-        // hard global ceiling at the moment money is actually released.
         if (advance.requestedAdvanceAmount > globalMaxAdvance) revert AboveGlobalMax();
 
         _rollDailyBucketIfNeeded(advance.supplier);
-        // Guardian confirmation explicitly overrides the two WARN conditions:
-        // supplier auto-approve cap and per-supplier daily cap.
         suppliersFundedToday[advance.supplier] += advance.requestedAdvanceAmount;
 
         advance.status = AdvanceStatus.Funded;
