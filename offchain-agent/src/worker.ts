@@ -12,6 +12,10 @@ import { hashUnderwritingDecision } from "./decision.js";
 import { loadVerifiedSupplierHistory } from "./history.js";
 import type { AdvanceRequest, UnderwritingEvidence } from "./types.js";
 
+const underwritingDecisionAbi = [
+  "function recordUnderwritingDecision(bytes32 invoiceId, bytes32 decisionHash) external",
+];
+
 interface WorkerConfig {
   proofBuilderUrl: string;
   sourceChainRpcUrl: string;
@@ -184,6 +188,11 @@ async function handleDeliveryConfirmed(
   const routing = routeReview(request, decision, underwriting);
   console.log(`[worker] review route: ${routing.route} — ${routing.reason}`);
 
+  const decisionRecorder = new Contract(cfg.managerAddress, underwritingDecisionAbi, creditcoinWalletFor(manager));
+  const recordTx = await decisionRecorder.recordUnderwritingDecision(event.invoiceId, decisionHash);
+  const recordReceipt = await recordTx.wait();
+  console.log(`[worker] recorded underwriting decision on-chain, tx hash: ${recordReceipt?.hash}`);
+
   const submitTx = await manager.fundAdvanceFromQuery(
     event.invoiceId,
     headerNumber,
@@ -195,6 +204,14 @@ async function handleDeliveryConfirmed(
   );
   const receipt = await submitTx.wait();
   console.log(`[worker] submitted fundAdvanceFromQuery, tx hash: ${receipt?.hash}`);
+}
+
+function creditcoinWalletFor(manager: Contract): ethers.Wallet {
+  const signer = manager.runner;
+  if (!(signer instanceof ethers.Wallet)) {
+    throw new Error("AttestGuard manager signer must be an ethers.Wallet");
+  }
+  return signer;
 }
 
 async function main() {
