@@ -217,7 +217,10 @@ function applyDeterministicEnvelope(
 
   const recommendedAdvance = modelAmount > hardMax ? hardMax : modelAmount;
   let riskTier = raw.riskTier as RiskTier;
-  const reasonCodes = new Set<UnderwritingReason>(raw.reasonCodes as UnderwritingReason[]);
+  // Model reason codes are advisory input only. Every factual reason code in
+  // the final proposal is reconstructed from verified evidence below, so the
+  // model cannot manufacture a false audit trail by selecting a reason code.
+  const reasonCodes = new Set<UnderwritingReason>();
   const riskFlags = [...raw.riskFlags];
 
   if (modelAmount > hardMax) {
@@ -230,7 +233,7 @@ function applyDeterministicEnvelope(
     riskTier = minimumTier;
     riskFlags.push("MODEL_RISK_TIER_BELOW_EVIDENCE_FLOOR");
   }
-  addEvidenceReasonCodes(evidence, reasonCodes, riskFlags);
+  addEvidenceReasonCodes(evidence, recommendedAdvance, reasonCodes, riskFlags);
 
   const verificationFailed = !evidence.deliveryVerified || !evidence.proofVerified;
   if (!evidence.deliveryVerified) {
@@ -368,9 +371,26 @@ function riskTierRank(tier: RiskTier): number {
 
 function addEvidenceReasonCodes(
   evidence: UnderwritingEvidence,
+  recommendedAdvance: bigint,
   reasonCodes: Set<UnderwritingReason>,
   riskFlags: string[]
 ): void {
+  if (evidence.deliveryVerified) reasonCodes.add("DELIVERY_VERIFIED");
+  if (evidence.proofVerified) reasonCodes.add("PROOF_VERIFIED");
+
+  if (recommendedAdvance <= evidence.request.invoiceAmount) {
+    reasonCodes.add("WITHIN_INVOICE_VALUE");
+  }
+  if (recommendedAdvance <= evidence.history.autoApproveCap) {
+    reasonCodes.add("WITHIN_SUPPLIER_CAP");
+  }
+  if (evidence.history.priorAdvancesWithThisBuyer === 0) {
+    reasonCodes.add("LOW_EXISTING_EXPOSURE");
+  }
+  if (evidence.request.requestedAdvanceAmount > evidence.request.invoiceAmount / 2n) {
+    reasonCodes.add("LARGE_REQUEST");
+  }
+
   for (const reasonCode of RELATIONSHIP_REASON_CODES) {
     reasonCodes.delete(reasonCode);
   }
