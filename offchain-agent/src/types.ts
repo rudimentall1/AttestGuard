@@ -19,7 +19,9 @@ export interface SupplierHistory {
   fundedToday: bigint;
   perSupplierDailyCap: bigint;
   priorAdvancesWithThisBuyer: number;
+  priorRepaymentsWithThisBuyer: number;
   priorDefaultsWithThisBuyer: number;
+  historyComplete: boolean;
 }
 
 export type PolicyDecision =
