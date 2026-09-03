@@ -6,7 +6,8 @@ import managerAbi from "../../contracts/abi/AttestGuardManager.json" with { type
 import tradeAbi from "../../contracts/abi/TradeConfirmation.json" with { type: "json" };
 import { evaluateAdvancePolicy } from "./policy.js";
 import { explainDecision } from "./explain.js";
-import type { AdvanceRequest, SupplierHistory } from "./types.js";
+import { underwrite } from "./underwriter.js";
+import type { AdvanceRequest, SupplierHistory, UnderwritingEvidence } from "./types.js";
 
 /**
  * AttestGuard off-chain agent.
@@ -16,15 +17,14 @@ import type { AdvanceRequest, SupplierHistory } from "./types.js";
  *      DeliveryConfirmed events tied to advances we've registered.
  *   2. Once Creditcoin has attested the block containing that event,
  *      fetch an inclusion proof via the Attestcoin Prover service.
- *   3. Run the (advisory, gas-saving) policy pre-check and attach an
- *      LLM-written explanation for the human dashboard.
+ *   3. Run the deterministic policy pre-check and produce a bounded AI
+ *      underwriting proposal from the verified evidence.
  *   4. Submit the proof to AttestGuardManager.fundAdvanceFromQuery — where
  *      the *real*, unbypassable policy check happens on-chain.
  *
- * This process holds no funds, and nothing it decides is final. If it
- * crashes, lies, or gets compromised, the worst outcome is a delayed or
- * skipped advance — never an advance that violates the on-chain caps,
- * because the contract re-derives its own verdict independently.
+ * The AI underwriter is advisory: it can recommend and explain risk, but it
+ * cannot authorize funding, override verified facts, or exceed the
+ * deterministic policy envelope. The smart contract remains authoritative.
  */
 
 interface WorkerConfig {
@@ -137,7 +137,24 @@ async function handleDeliveryConfirmed(
 
   const { headerNumber, txBytes, merkleProof, continuityProof } = proofResult.data;
 
-  // Step 3: submit to Creditcoin. AttestGuardManager independently
+  // Step 3: underwriting sees the verified event + proof facts. It produces
+  // a structured proposal only; it has no transaction-signing or funding
+  // authority. The proposal is deterministically bounded before it is logged.
+  const underwritingEvidence: UnderwritingEvidence = {
+    request,
+    history,
+    deliveryVerified: true,
+    proofVerified: true,
+    // Timestamp enrichment is intentionally optional in v1. The security
+    // envelope does not depend on this advisory field.
+    invoiceAgeSeconds: 0,
+  };
+  const underwriting = await underwrite(underwritingEvidence);
+  console.log(
+    `[worker] bounded underwriting: tier=${underwriting.riskTier} recommendation=${underwriting.recommendedAdvance} confidence=${underwriting.confidenceBps}bps evidence=${underwriting.evidenceHash}`
+  );
+
+  // Step 4: submit to Creditcoin. AttestGuardManager independently
   // re-verifies the proof and re-runs its own policy gate — this call can
   // still result in AdvanceFlaggedForConfirmation on-chain even though our
   // own pre-check above said AUTO_APPROVE, if on-chain state has since
