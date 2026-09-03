@@ -85,6 +85,82 @@ test("caps a model recommendation above the deterministic envelope", async () =>
   assert.ok(proposal.riskFlags.includes("MODEL_RECOMMENDATION_EXCEEDED_DETERMINISTIC_ENVELOPE"));
 });
 
+test("model cannot claim tier A when prior advances have no verified repayments", async () => {
+  const proposal = await underwrite(
+    evidence({ history: baseHistory({ priorRepaymentsWithThisBuyer: 0 }) }),
+    {
+      anthropicApiKey: "test-key",
+      fetchFn: mockAnthropic({
+        recommendedAdvance: "400",
+        riskTier: "A",
+        confidenceBps: 10000,
+        reasonCodes: ["DELIVERY_VERIFIED", "PROOF_VERIFIED"],
+        riskFlags: [],
+      }),
+    }
+  );
+
+  assert.equal(proposal.riskTier, "B");
+  assert.ok(proposal.reasonCodes.includes("LIMITED_REPAYMENT_HISTORY"));
+  assert.ok(proposal.riskFlags.includes("MODEL_RISK_TIER_BELOW_EVIDENCE_FLOOR"));
+});
+
+test("model cannot claim tier A for incomplete or new relationship history", async () => {
+  const incomplete = await underwrite(
+    evidence({ history: baseHistory({ historyComplete: false }) }),
+    {
+      anthropicApiKey: "test-key",
+      fetchFn: mockAnthropic({
+        recommendedAdvance: "400",
+        riskTier: "A",
+        confidenceBps: 10000,
+        reasonCodes: ["DELIVERY_VERIFIED", "PROOF_VERIFIED"],
+        riskFlags: [],
+      }),
+    }
+  );
+  assert.equal(incomplete.riskTier, "C");
+  assert.ok(incomplete.riskFlags.includes("HISTORY_INCOMPLETE"));
+
+  const newRelationship = await underwrite(
+    evidence({
+      history: baseHistory({ priorAdvancesWithThisBuyer: 0, priorRepaymentsWithThisBuyer: 0 }),
+    }),
+    {
+      anthropicApiKey: "test-key",
+      fetchFn: mockAnthropic({
+        recommendedAdvance: "400",
+        riskTier: "A",
+        confidenceBps: 10000,
+        reasonCodes: ["DELIVERY_VERIFIED", "PROOF_VERIFIED"],
+        riskFlags: [],
+      }),
+    }
+  );
+  assert.equal(newRelationship.riskTier, "C");
+  assert.ok(newRelationship.reasonCodes.includes("NEW_BUYER_RELATIONSHIP"));
+});
+
+test("verified defaults impose the strongest risk-tier floor", async () => {
+  const proposal = await underwrite(
+    evidence({ history: baseHistory({ priorDefaultsWithThisBuyer: 1 }) }),
+    {
+      anthropicApiKey: "test-key",
+      fetchFn: mockAnthropic({
+        recommendedAdvance: "400",
+        riskTier: "A",
+        confidenceBps: 10000,
+        reasonCodes: ["DELIVERY_VERIFIED", "PROOF_VERIFIED"],
+        riskFlags: [],
+      }),
+    }
+  );
+
+  assert.equal(proposal.riskTier, "D");
+  assert.ok(proposal.reasonCodes.includes("DEFAULT_HISTORY"));
+  assert.ok(proposal.riskFlags.includes("PRIOR_DEFAULTS"));
+});
+
 test("unverified facts force zero advance and tier D regardless of AI claims", async () => {
   const proposal = await underwrite(evidence({ deliveryVerified: false, proofVerified: false }), {
     anthropicApiKey: "test-key",
@@ -190,6 +266,18 @@ test("prior defaults produce elevated fallback risk", async () => {
   assert.equal(proposal.riskTier, "D");
   assert.ok(proposal.reasonCodes.includes("DEFAULT_HISTORY"));
   assert.ok(proposal.riskFlags.includes("PRIOR_DEFAULTS"));
+});
+
+test("evidence hash changes when repayment history changes", () => {
+  const first = hashEvidence(evidence());
+  const second = hashEvidence(evidence({ history: baseHistory({ priorRepaymentsWithThisBuyer: 3 }) }));
+  assert.notEqual(first, second);
+});
+
+test("evidence hash changes when history completeness changes", () => {
+  const first = hashEvidence(evidence());
+  const second = hashEvidence(evidence({ history: baseHistory({ historyComplete: false }) }));
+  assert.notEqual(first, second);
 });
 
 test("evidence hash changes when a security-relevant fact changes", () => {
