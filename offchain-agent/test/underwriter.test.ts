@@ -285,3 +285,41 @@ test("evidence hash changes when a security-relevant fact changes", () => {
   const second = hashEvidence(evidence({ proofVerified: false }));
   assert.notEqual(first, second);
 });
+
+test("evidence hash changes for every deterministic amount/cap input", () => {
+  const first = hashEvidence(evidence());
+
+  const variants = [
+    evidence({ request: baseRequest({ invoiceAmount: 1100n }) }),
+    evidence({ request: baseRequest({ requestedAdvanceAmount: 450n }) }),
+    evidence({ history: baseHistory({ autoApproveCap: 450n }) }),
+    evidence({ history: baseHistory({ fundedToday: 100n }) }),
+    evidence({ history: baseHistory({ perSupplierDailyCap: 1900n }) }),
+  ];
+
+  for (const variant of variants) {
+    assert.notEqual(hashEvidence(variant), first);
+  }
+});
+
+test("evidence hash changes for each relationship risk input", () => {
+  const first = hashEvidence(evidence());
+
+  const variants = [
+    evidence({ history: baseHistory({ priorAdvancesWithThisBuyer: 4 }) }),
+    evidence({ history: baseHistory({ priorDefaultsWithThisBuyer: 1 }) }),
+    evidence({ history: baseHistory({ supplier: "0x3333333333333333333333333333333333333c" }) }),
+    evidence({ request: baseRequest({ buyer: "0x4444444444444444444444444444444444444d" }) }),
+    evidence({ request: baseRequest({ supplier: "0x5555555555555555555555555555555555555e" }) }),
+  ];
+
+  for (const variant of variants) {
+    assert.notEqual(hashEvidence(variant), first);
+  }
+});
+
+test("evidence hash is deterministic for identical evidence", () => {
+  const first = hashEvidence(evidence());
+  const second = hashEvidence(evidence());
+  assert.equal(second, first);
+});
