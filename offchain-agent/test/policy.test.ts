@@ -21,7 +21,9 @@ function baseHistory(overrides: Partial<SupplierHistory> = {}): SupplierHistory 
     fundedToday: 0n,
     perSupplierDailyCap: 2000n,
     priorAdvancesWithThisBuyer: 3,
+    priorRepaymentsWithThisBuyer: 2,
     priorDefaultsWithThisBuyer: 0,
+    historyComplete: true,
     ...overrides,
   };
 }

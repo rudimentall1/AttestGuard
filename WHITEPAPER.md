@@ -1,318 +1,237 @@
 # AttestGuard
 
 **Trade-finance advances, funded only when the underlying event is
-cryptographically verified - and only when a deterministic, on-chain policy
+cryptographically verified — and only when a deterministic, on-chain policy
 says the amount is safe to release.**
 
-Version 0.2 (v2 contract revision) - August 2026
+Version 0.3 (proof-gated repayment + bounded AI underwriting) - September 2026
 
 ---
 
 ## Abstract
 
-Trade finance - a supplier advancing goods against an invoice, then waiting
-30-90 days (or paying a discount to a factoring desk) to get paid - is
-still, in 2026, gated on someone manually checking that delivery happened
-before money moves. That check is either slow (a human reviewing paperwork)
-or centralized (an oracle operator whose word you have to trust).
+Trade finance — a supplier advancing goods against an invoice, then waiting
+30-90 days (or paying a discount to a factoring desk) to get paid — is still
+gated on someone manually checking that delivery happened before money moves.
+That check is either slow (a human reviewing paperwork) or centralized (an
+oracle operator whose word you have to trust).
 
-AttestGuard removes the trust requirement from the first half of that
-problem and the manual-review requirement from the second half. It uses
+AttestGuard removes the trust requirement from event verification and puts a
+deterministic safety boundary around autonomous execution. It uses
 Creditcoin's Attestcoin Protocol to cryptographically verify that a
-delivery-confirmation event really happened on a source chain, with no
-oracle operator in the loop - and it gates every fund release behind a
-deterministic, on-chain policy contract that an AI agent orchestrating the
-process cannot bypass, only fail to use correctly. The result is an AI
-agent that can be trusted to move real money, not because you trust the
-agent, but because you don't have to: cryptography checks the input,
-immutable contract logic checks the output.
+delivery-confirmation event really happened on a source chain, with no oracle
+operator in the loop, and gates every fund release behind deterministic,
+on-chain policy. A bounded AI underwriter can interpret verified evidence and
+recommend an amount/risk tier, but it cannot authorize funding or weaken a
+policy verdict.
 
-This document describes what is actually built and deployed - not a
-roadmap dressed up as a product. Every mechanism described here has a
-corresponding line of code and, in most cases, a live testnet transaction
-demonstrating it. Where something is not yet built, it is labeled as such.
+The system also closes the previously documented repayment trust gap:
+repayment-driven reputation now requires a distinct `RepaymentConfirmed`
+event and the same proof-gated verification model used for funding.
+
+This document describes the current architecture and its explicit trust
+boundaries. Live deployment claims refer only to versions actually deployed
+and recorded in the repository.
 
 ## Problem Statement
 
 **The event-verification problem.** A financing decision that depends on
-"did the buyer receive the goods" needs a source of truth for that
-question. Today that source is almost always a person, a centralized API,
-or an oracle network whose incentive alignment you have to evaluate
-separately from the financing logic itself. Every one of those is a
-single point of failure or a single point of trust.
+"did the buyer receive the goods" needs a source of truth. Today that source
+is often a person, a centralized API, or an oracle network. Every one adds a
+trust assumption.
 
-**The AI-agent-authority problem.** As AI agents increasingly initiate
-on-chain financial transactions - reading data, forming a judgment, and
-acting on it - the industry pattern has been to trust the agent's
-judgment directly, often based on a statistical "risk score" that turns
-out, on inspection, to be built on placeholder data (a pattern documented
-in this author's own earlier project, Agentic Wallet Guardian, and named
-explicitly as the reason for its successor, Agent Guardrail). An agent
-that is wrong, buggy, or compromised should not be able to move money
-outside pre-agreed bounds - full stop, regardless of how good its
-reasoning looked.
+**The AI-agent-authority problem.** An AI agent that initiates financial
+transactions should not be able to move money outside pre-agreed bounds,
+regardless of whether its reasoning is good, bad, manipulated, or wrong.
 
-**Why both at once.** Solving only the first problem gets you a trustless
-oracle with no safety rails - a verified event still doesn't tell you
-whether releasing this amount, to this party, right now, is sound
-financial policy. Solving only the second gets you a well-guarded agent
-with nothing real to act on. AttestGuard exists because both halves were
-already solved separately (Attestcoin Protocol for the first, this
-author's Agent Guardrail project for the deterministic-policy pattern) and
-needed to be composed.
+**Why both at once.** Solving only event verification gives you a verified
+fact without a safety policy. Solving only agent guardrails gives you safe
+action without trustworthy external evidence. AttestGuard composes the two:
+cryptographic input verification plus immutable output constraints.
 
 ## Vision & Mission
 
 The mission is narrow on purpose: make "an AI agent autonomously financing
 real-world trade" something a lender, a supplier, or an auditor can verify
-independently, rather than something they have to take on faith.
+independently rather than something they must take on faith.
 
-In three to five years, the expectation is that AI agents managing
-short-duration, event-triggered financial flows - invoice advances, escrow
-releases, insurance payouts contingent on a verifiable real-world event -
-become common enough that the interesting question stops being "can an
-agent do this" and becomes "how do we know it did this correctly, every
-time, without a human checking each transaction." AttestGuard's answer -
-cryptographic input verification plus immutable on-chain policy
-enforcement - is a pattern intended to generalize past trade finance to
-any AI-agent-triggered action gated on a real-world event: insurance
-claims, supply-chain milestone payments, service-level-agreement
-penalties.
+The same pattern can generalize to event-triggered financial flows such as
+insurance payouts, escrow releases, supply-chain milestone payments, and
+SLA penalties: a model proposes or explains; cryptography establishes facts;
+an immutable policy decides what may happen.
 
 ## Market Context
 
-Trade finance is a multi-trillion-dollar market with a persistent gap: the
-World Trade Organization and multiple industry surveys have repeatedly
-cited a trade finance gap in the hundreds of billions of dollars,
-disproportionately affecting small and medium suppliers who can't access
-traditional factoring at reasonable rates because the manual
-verification and underwriting cost doesn't scale down to smaller invoice
-sizes. Automating the verification step - without removing the safety
-rails that traditional underwriting provides - is what makes smaller,
-faster, cheaper advances economically viable.
+Trade finance has a persistent global financing gap, disproportionately
+affecting smaller suppliers for whom manual verification and underwriting
+costs do not scale. Automating event verification while preserving hard
+financial safety rails is the core economic thesis of AttestGuard.
 
-Separately, Creditcoin's own positioning is explicitly built around
-real-world credit and lending infrastructure, and the Attestcoin Protocol
-is new infrastructure (this project is built for a hackathon centered on
-it) specifically aimed at proving cross-chain events without a
-centralized oracle. AttestGuard is a concrete application of that
-infrastructure to a market Creditcoin is already oriented toward, rather
-than a generic "AI plus blockchain" demo bolted onto an unrelated chain.
+Creditcoin is already oriented toward real-world credit and lending
+infrastructure, while Attestcoin provides cross-chain event verification.
+AttestGuard applies that infrastructure to a concrete trade-finance workflow
+rather than presenting a generic "AI plus blockchain" demo.
 
 ## Technical Architecture
 
 Buyer confirms delivery         Attestcoin Protocol            AttestGuardManager.sol
    on source chain      ---->   proves it happened      --->   (on Creditcoin)
   (TradeConfirmation.sol)       (no oracle operator)            |
-                                                                 |-- within caps? --> auto-fund
-                                                                 |-- over cap?    --> flag for
-                                                                 |                     human guardian
-                                                                 |-- repaid?      --> raise cap
-                                                                        (reputation, earned only
-                                                                         from verified history)
+                                                                 |-- policy-safe --> auto-fund
+                                                                 |-- over threshold --> guardian
+                                                                 |-- repayment proof --> reputation
 
 **Components:**
 
-- TradeConfirmation.sol (source chain, Ethereum Sepolia in the current
-  deployment) - a minimal contract with no knowledge of Creditcoin or
-  AttestGuard. Buyers call confirmDelivery(invoiceId, supplier, amount)
-  and it emits a plain event. This is deliberate: the contract being
-  proven against doesn't need to be aware it's being proven against, which
-  is the entire value proposition of the Attestcoin Protocol over a
-  traditional oracle (no integration burden on the source-chain contract).
-
-- `AttestGuardManager.sol` (Creditcoin CC3 testnet) - an Attestcoin Smart
-  Contract (ASC). Its `fundAdvanceFromQuery` entry point takes a Merkle
-  inclusion proof and a continuity proof, calls Creditcoin's native Block
-  Prover precompile (fixed address `0x0FD2`) to verify them, decodes the
-  underlying transaction bytes via `EvmV1Decoder` (from the official
-  `@gluwa/usc-contracts` package), and matches the resulting
-  `DeliveryConfirmed` log against a registered invoice before running the
-  guardrail policy gate described below.
-
-- `offchain-agent/` (TypeScript) - the orchestration layer. Watches the
-  source chain for events, requests proofs from Creditcoin's Attestcoin
-  prover service, runs an advisory (gas-saving, non-authoritative) policy
-  pre-check, optionally asks an LLM to write a human-readable explanation
-  of the decision for a dashboard, and submits the proof on-chain. Nothing
-  in this layer holds funds or has unilateral authority - see Core
-  Technology below for exactly where its authority ends.
+- `TradeConfirmation.sol` (source chain, Ethereum Sepolia in the current
+  demo) emits `DeliveryConfirmed` when a buyer confirms delivery.
+- `AttestGuardManager.sol` (Creditcoin CC3 testnet deployment) verifies
+  inclusion and continuity proofs through Creditcoin's Block Prover precompile
+  and decodes the underlying transaction using `EvmV1Decoder`.
+- `offchain-agent/` watches source-chain events, obtains proofs, runs a
+  deterministic policy mirror, builds verified history evidence, invokes the
+  bounded AI underwriter when configured, and submits proof queries.
+- `history.ts` derives buyer/supplier relationship history from the manager's
+  own emitted events. It counts historical registrations and
+  proof-gated repayments and deliberately does not infer defaults from
+  `AdvanceRejected`.
+- `underwriter.ts` treats model output as untrusted data: strict schema
+  validation, evidence hashing, deterministic amount caps and fail-closed
+  verification are applied before the proposal is used operationally.
+- `routing.ts` is monotonic advisory routing. It can escalate review, but it
+  cannot weaken a deterministic `BLOCK` or `WARN` decision.
 
 **Data flow for a single advance:**
 
 1. Owner registers an invoice on `AttestGuardManager` (supplier, buyer,
-   invoice amount, requested advance amount).
-2. Buyer calls `confirmDelivery` on the source chain when goods are
-   received/accepted.
-3. The off-chain agent detects the event, waits for Creditcoin to attest
-   the containing block, and fetches a proof from the Attestcoin prover
-   service.
-4. The agent submits the proof to `fundAdvanceFromQuery`. The contract
-   independently re-verifies it via the precompile - the agent's own proof
-   fetch is not trusted, only re-checked.
-5. The contract decodes the transaction, matches the log against the
-   registered invoice, and runs the policy gate: within the supplier's
-   auto-approve cap and daily cap -> immediate transfer; over either ->
-   `PendingConfirmation`, requiring a `guardianConfirmer` transaction.
-6. On repayment (currently owner-attested; see Security Model for the
-   honest caveat on this step), the supplier's auto-approve cap grows for
-   next time.
+   invoice amount, requested advance amount). This remains an explicit admin
+   trust boundary.
+2. Buyer calls `confirmDelivery` on the source chain.
+3. The off-chain agent detects the event, waits for Creditcoin attestation,
+   and fetches an Attestcoin proof.
+4. The agent builds evidence and may ask the bounded AI underwriter for a
+   proposal. The model receives verified facts; its output is not authority.
+5. The agent submits the proof to `fundAdvanceFromQuery`. The contract
+   independently re-verifies the proof, decodes the transaction, matches the
+   registered invoice and buyer, and runs the on-chain policy gate.
+6. Within policy limits, the advance is funded automatically. Over-limit
+   requests enter the guardian confirmation path.
+7. On repayment, a distinct `RepaymentConfirmed` event is proven through the
+   same Block Prover trust boundary before `acknowledgeRepaymentFromQuery`
+   updates repayment-driven reputation.
 
 ## Core Technology
 
-**Where AI ends and enforcement begins.** This is the single most
-important design decision in the system, and it is enforced at the
-compiler level, not by convention: the off-chain agent's policy check in
-`policy.ts` is a pure function with no side effects - it returns a verdict
-string, nothing more. It cannot call the contract, cannot move funds, and
-its result is used only to decide whether it's worth spending gas on a
-proof submission that the contract might reject anyway. The actual,
-irreversible decision happens in `_applyPolicyAndMaybeFund` inside
-`AttestGuardManager.sol` - a `view`-adjacent internal function whose
-inputs are entirely on-chain state (registered advance amounts, current
-caps, today's funded total), not anything the agent asserts at call time.
-An agent that is compromised, buggy, or actively malicious can at most
-submit a proof the contract then rejects; it cannot construct a call that
-skips the gate, because the gate isn't a parameter, it's the function
-itself.
+**Where AI ends and enforcement begins.** The off-chain policy check is a
+pure, side-effect-free mirror intended to save gas and surface review before
+a proof submission. The irreversible decision happens inside
+`AttestGuardManager.sol`, using on-chain registered amounts and caps. A
+compromised agent cannot construct a call that skips the gate.
 
-**The LLM's authority is zero.** `explain.ts` is the only place an LLM is
-called anywhere in the system. It is given the deterministic verdict
-*after* it has already been decided, and asked only to phrase it in plain
-language for a human dashboard. If the LLM call fails, times out, is
-disabled, or returns garbage, the pipeline proceeds identically - the
-funding decision was made before the call and does not depend on its
-result. This is a direct, structural answer to prompt-injection and
-agent-hijacking concerns raised in AI-agent security research generally:
-there is no prompt for an attacker to inject that would change what money
-does, because the component that talks to an LLM has no path to money.
+**The LLM's authority is zero.** `explain.ts` and `underwriter.ts` are the
+only LLM call sites. `explain.ts` receives an already-determined outcome and
+produces a human-readable explanation. `underwriter.ts` receives structured
+evidence and produces an advisory proposal that is strictly validated and
+bounded by deterministic rules. Neither component has funding or
+authorization power. Neither can override the contract's policy gate.
 
-**Reputation as an earned, not asserted, primitive.** A supplier's
-auto-approve cap only grows via `acknowledgeRepayment`, and every growth
-event is a public, indexed `AutoApproveCapUpdated` log - a supplier's
-entire autonomy history is auditable from chain data alone, without
-trusting a database. The honest caveat (see Security Model) is that this
-specific function is currently owner-attested rather than itself
-proof-gated; closing that gap is the highest-value remaining architectural
-change, and is scoped explicitly in the roadmap rather than glossed over.
+**Bounded AI underwriting v1.** The underwriter emits a fixed-version proposal
+containing a recommended advance, risk tier, confidence, reason codes, risk
+flags, model metadata, timestamp and an evidence hash. Unsafe numeric values,
+unknown reason codes, invalid confidence values and malformed responses fall
+back safely. Recommendations above the deterministic envelope are capped and
+flagged for review. Missing proof or delivery verification forces zero
+recommendation and elevated risk.
 
-**Defense in depth on the funding path.** `nonReentrant` on both
-fund-moving functions, `Pausable` as a circuit breaker independent of the
-registration path (so a paused contract can still register future
-invoices while an incident is investigated), replay protection via a
-`processedQueries` mapping keyed on chain, block height, and transaction
-index (so the same proof cannot fund twice), and a hard `globalMaxAdvance`
-ceiling that no per-supplier cap can override.
+**Reputation as an earned primitive.** Supplier auto-approve capacity can grow
+from verified repayment history. `acknowledgeRepaymentFromQuery` requires a
+proof of the distinct `RepaymentConfirmed` source-chain event, verifies it
+through the Block Prover, checks the repayment amount, and uses replay
+protection. The old owner-attested repayment path is no longer the active
+architecture; ADR-0005 is retained only as the historical record of that gap.
+
+**Defense in depth on the funding path.** `nonReentrant` protects fund-moving
+functions, `Pausable` provides a circuit breaker, replay protection prevents
+re-use of the same verified query, and a hard global ceiling cannot be
+bypassed by a per-supplier cap.
 
 ## Security Model
 
-Full technical detail lives in [SECURITY.md](./SECURITY.md) in the
-repository and is kept up to date there as the single source of truth;
-this section summarizes the trust boundaries.
+Full technical detail lives in [SECURITY.md](./SECURITY.md).
 
 **What Attestcoin Protocol guarantees:** the source-chain event really
 happened, verified via Merkle inclusion and continuity proofs against
-Creditcoin's own consensus-adjacent infrastructure. No off-chain party,
-including this project's own agent, can forge this.
+Creditcoin's Block Prover infrastructure. The off-chain agent is not the
+source of truth for that fact.
 
-**What it does not guarantee:** that the invoice being financed is a real
-business relationship, or that the party who triggered the event is who
-your business process expects - that's a registration-time trust
-assumption (see below), not something Attestcoin Protocol is designed to
-solve.
+**What it does not guarantee:** that the invoice itself represents a genuine
+business relationship. `registerAdvance` remains owner-controlled in the
+current version. Attestcoin proves the registered source-chain event; it does
+not independently perform KYC, invoice underwriting, or business-relationship
+validation.
 
-**What is currently centralized, stated plainly rather than hidden:**
-invoice registration (`registerAdvance`) and repayment acknowledgment
-(`acknowledgeRepayment`) are owner-controlled. This is the direct,
-intentional scope boundary of the current version - the parts that
-*are* decentralized (event verification, policy enforcement) are the
-parts Attestcoin Protocol and immutable contract logic are actually good
-at; the parts that require a real-world trust decision (is this invoice
-legitimate, did repayment really happen) are left as an explicit,
-auditable admin action rather than papered over with a false
-decentralization claim.
+**What repayment verification guarantees:** repayment-driven reputation is
+now based on a distinct, proof-gated `RepaymentConfirmed` event rather than an
+owner-only assertion. The repayment query is independently verified and
+amount-checked before the reputation update.
 
-**Why this can't be copied in a week:** not because the individual pieces
-are exotic - Attestcoin Protocol's SDK and the Block Prover precompile
-are Creditcoin's own, openly documented infrastructure - but because the
-composition decision (advisory-only AI, unbypassable on-chain policy,
-explicit and audited trust boundaries rather than marketing-copy
-decentralization) is a discipline, not a library. It was arrived at
-directly through two prior projects and an external audit that caught the
-overclaiming pattern this project was built to avoid repeating.
+**What remains centralized:** invoice registration and pooled liquidity
+withdrawal remain explicit owner trust boundaries. Production deployments
+would require stronger onboarding and depositor accounting than the hackathon
+testnet scope.
 
 ## Use Cases
 
-**A small textile supplier, first-time relationship.** Ships goods to a
-new buyer, requests a modest advance against the invoice. The system
-starts them at `DEFAULT_AUTO_APPROVE_CAP` with no manual review - the
-first several advances with any given buyer relationship are exactly the
-case the default cap is sized for.
+**A small textile supplier, first-time relationship.** The first advance for
+a buyer relationship is conservatively routed for review rather than silently
+assuming a long repayment history. Verified history can inform future
+underwriting.
 
-**A recurring supplier-buyer pair with a repayment track record.** Each
-`acknowledgeRepayment` raises the supplier's auto-approve cap, so a
-supplier who reliably gets repaid needs less manual guardian intervention
-over time - autonomy that is earned from on-chain history, not asserted.
+**A recurring supplier-buyer pair with a repayment track record.** Verified
+`RepaymentConfirmed` events contribute to the relationship evidence and
+supplier reputation without requiring an owner to simply assert that repayment
+occurred.
 
-**A lender/liquidity provider.** Deposits stablecoin liquidity via
-`depositLiquidity` (or, in the v2 revision, can reclaim undeployed
-liquidity via `withdrawLiquidity`) without needing to underwrite each
-individual advance manually - the policy gate is the underwriting logic,
-applied consistently and auditable after the fact.
+**A lender/liquidity provider.** Deposits testnet liquidity into the vault
+while deterministic policy controls advance releases. The current owner-only
+withdrawal model is documented and is not presented as production-grade
+third-party depositor accounting.
 
-**A guardian/risk reviewer.** Only sees the advances the deterministic
-policy already flagged as exceeding a cap - not a queue of every
-transaction, which is what makes human review economically viable at
-volume.
+**A guardian/risk reviewer.** Sees cases escalated by deterministic policy or
+bounded underwriting rather than having to manually review every routine
+transaction.
 
 ## Roadmap
 
-**Shipped (v2, current deployment):** Attestcoin-verified funding,
-on-chain guardrail policy with auto-approve/daily/global caps,
-human-confirmation path for over-cap advances, reputation growth on
-repayment acknowledgment, `Pausable` circuit breaker, `withdrawLiquidity`
-escape hatch, full test coverage including a mock-precompile end-to-end
-suite (17/17 passing) exercising the real proof-decode-policy path inside
-CI.
+**Shipped in code:** Attestcoin-verified funding, on-chain guardrail policy,
+human-confirmation path, proof-gated repayment, bounded AI underwriting v1,
+evidence hashing, monotonic review routing, and verified buyer/supplier
+history indexing in the off-chain agent.
 
-**Next (proof-gating the remaining centralized steps):** bind
-`acknowledgeRepayment` to a verified proof of the buyer's on-chain
-repayment, the same way funding itself is proof-gated - closing the last
-honestly-documented centralization gap. Supplier/buyer self-registration
-with staking or a lightweight KYC gate, reducing reliance on
-owner-asserted invoice legitimacy.
+**Next:** fresh public-testnet deployment of the current contract revision,
+with the resulting addresses and repayment transaction evidence recorded only
+after the deployment is actually exercised. Add stronger supplier/buyer
+onboarding with staking or KYC-style controls to reduce the invoice-registration
+trust boundary.
 
-**Later:** multi-source-chain support (the current deployment trusts one
-`sourceChainKey`), a hosted guardian dashboard reusing the
-confirmation-UI pattern from this author's Agent Guardrail project, and a
-buyer-relationship history index replacing the current placeholder logic
-in the off-chain agent.
+**Later:** multi-source-chain support, a hosted guardian dashboard, and a
+reusable policy-gate primitive parameterized by event type.
 
 ## Future Research Directions
 
-The advisory-AI / unbypassable-policy split used here for trade finance is
-not specific to trade finance. The same pattern - an LLM or agent framework
-proposes and explains, a deterministic on-chain (or otherwise immutable)
-policy gate independently decides - applies to any domain where an AI
-agent's judgment needs to inform, but not unilaterally control, an
-irreversible action: insurance payout triggers, supply-chain milestone
-payments, automated compliance actions. Generalizing the policy-gate
-contract into a reusable primitive, parameterized by event type rather
-than hardcoded to `DeliveryConfirmed`, is the natural next research
-direction once the trade-finance-specific version has real usage data to
-learn from.
+The advisory-AI / unbypassable-policy split is not specific to trade finance.
+A model can propose and explain while an immutable policy independently decides
+what an irreversible action is allowed to do. Generalizing that primitive to
+insurance, escrow, supply-chain and compliance workflows is the natural next
+research direction after real usage data exists.
 
 ## Conclusion
 
-The honest version of this project's pitch is not "AI plus blockchain
-removes trust from finance" - that claim is bigger than what's actually
-built, and this document has tried throughout to be explicit about where
-trust is still required (invoice registration, repayment acknowledgment)
-versus where it has genuinely been removed (event verification, policy
-enforcement). What AttestGuard demonstrates concretely is narrower and,
-for that reason, more credible: that an AI agent can be given real
-operational authority over financial transactions specifically because
-the authority is bounded by cryptography on one side and immutable
-contract logic on the other, not because the agent is trusted to behave.
-That is a pattern worth building on, and this repository is the working
-implementation of it, not a description of one.
+The credible claim is not that AI or blockchain magically removes every trust
+assumption from finance. AttestGuard explicitly retains owner-controlled
+invoice registration and pooled-vault administration. What it demonstrates is
+narrower and stronger: an AI agent can operate a financial workflow because
+its inputs are cryptographically verified, its recommendations are bounded,
+and the irreversible funding decision is enforced independently by smart
+contracts. Repayment-driven reputation now follows the same proof-gated
+principle rather than relying on an owner assertion.
