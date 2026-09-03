@@ -11,26 +11,6 @@ import { underwrite } from "./underwriter.js";
 import { loadVerifiedSupplierHistory } from "./history.js";
 import type { AdvanceRequest, UnderwritingEvidence } from "./types.js";
 
-/**
- * AttestGuard off-chain agent.
- *
- * Responsibilities (deliberately narrow):
- *   1. Watch the source-chain TradeConfirmation contract for
- *      DeliveryConfirmed events tied to advances we've registered.
- *   2. Once Creditcoin has attested the block containing that event,
- *      fetch an inclusion proof via the Attestcoin Prover service.
- *   3. Run the deterministic policy pre-check and produce a bounded AI
- *      underwriting proposal from verified evidence and on-chain history.
- *   4. Derive a monotonic review route: AI may escalate human attention but
- *      can never weaken a deterministic WARN/BLOCK decision.
- *   5. Submit the proof to AttestGuardManager.fundAdvanceFromQuery — where
- *      the *real*, unbypassable policy check happens on-chain.
- *
- * The AI underwriter, history index and review routing are advisory. They
- * cannot authorize funding, override verified facts, or exceed/weaken the
- * deterministic policy envelope. The smart contract remains authoritative.
- */
-
 interface WorkerConfig {
   proofBuilderUrl: string;
   sourceChainRpcUrl: string;
@@ -41,6 +21,33 @@ interface WorkerConfig {
   sourceChainKey: number;
   pollIntervalMs: number;
   historyFromBlock: number;
+  proofMaxAttempts: number;
+  proofRetryBaseMs: number;
+  proofRetryMaxMs: number;
+  eventRetryBaseMs: number;
+  eventRetryMaxMs: number;
+}
+
+export interface DeliveryEvent {
+  invoiceId: string;
+  buyer: string;
+  supplier: string;
+  amount: bigint;
+  txHash: string;
+}
+
+export interface PendingDelivery {
+  event: DeliveryEvent;
+  attempts: number;
+  nextRetryAt: number;
+}
+
+function envPositiveInt(name: string, fallback: number): number {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isFinite(value) || value <= 0 || !Number.isInteger(value)) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
 }
 
 function loadConfig(): WorkerConfig {
@@ -58,15 +65,51 @@ function loadConfig(): WorkerConfig {
     managerAddress: required("ATTESTGUARD_MANAGER_ADDRESS"),
     sourceTradeConfirmationAddress: required("SOURCE_TRADE_CONFIRMATION_ADDRESS"),
     sourceChainKey: Number(process.env.SOURCE_CHAIN_KEY ?? "1"),
-    pollIntervalMs: Number(process.env.POLL_INTERVAL_MS ?? "15000"),
+    pollIntervalMs: envPositiveInt("POLL_INTERVAL_MS", 15000),
     historyFromBlock: Number(process.env.HISTORY_FROM_BLOCK ?? "0"),
+    proofMaxAttempts: envPositiveInt("PROOF_MAX_ATTEMPTS", 6),
+    proofRetryBaseMs: envPositiveInt("PROOF_RETRY_BASE_MS", 2000),
+    proofRetryMaxMs: envPositiveInt("PROOF_RETRY_MAX_MS", 30000),
+    eventRetryBaseMs: envPositiveInt("EVENT_RETRY_BASE_MS", 15000),
+    eventRetryMaxMs: envPositiveInt("EVENT_RETRY_MAX_MS", 120000),
   };
+}
+
+export function exponentialBackoffMs(attempt: number, baseMs: number, maxMs: number): number {
+  if (!Number.isInteger(attempt) || attempt < 0) throw new Error("attempt must be a non-negative integer");
+  return Math.min(maxMs, baseMs * 2 ** attempt);
+}
+
+async function getProofWithRetry(
+  proofBuilder: proofProvider.service.ProofBuilder,
+  txHash: string,
+  maxAttempts: number,
+  baseMs: number,
+  maxMs: number,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const proofResult = await proofBuilder.getProof(txHash);
+    if (proofResult.success && proofResult.data) return proofResult.data;
+
+    if (attempt + 1 >= maxAttempts) {
+      throw new Error(`proof generation failed after ${maxAttempts} attempts: ${proofResult.error ?? "unknown reason"}`);
+    }
+
+    const delayMs = exponentialBackoffMs(attempt, baseMs, maxMs);
+    console.warn(
+      `[worker] proof not ready for tx ${txHash} (${proofResult.error ?? "unknown reason"}), retrying in ${delayMs}ms (${attempt + 2}/${maxAttempts})...`
+    );
+    await sleep(delayMs);
+  }
+
+  throw new Error(`proof generation failed after ${maxAttempts} attempts`);
 }
 
 async function handleDeliveryConfirmed(
   cfg: WorkerConfig,
   manager: Contract,
-  event: { invoiceId: string; buyer: string; supplier: string; amount: bigint; txHash: string }
+  event: DeliveryEvent
 ) {
   console.log(`[worker] DeliveryConfirmed for invoice ${event.invoiceId} (tx ${event.txHash})`);
 
@@ -76,11 +119,6 @@ async function handleDeliveryConfirmed(
     return;
   }
 
-  // The source event is only a trigger for proof acquisition. For all
-  // underwriting/history inputs, use the registered on-chain identity as the
-  // authoritative supplier/buyer. This prevents a malformed or mismatched
-  // event from influencing advisory AI reasoning before the contract's proof
-  // validator gets the final say.
   if (event.buyer.toLowerCase() !== onChainAdvance.buyer.toLowerCase()) {
     console.warn(`[worker] buyer mismatch for ${event.invoiceId}; skipping advisory processing`);
     return;
@@ -120,41 +158,20 @@ async function handleDeliveryConfirmed(
     return;
   }
 
-  // Step 2: fetch a proof once Creditcoin has attested the block containing
-  // this transaction. The proof service returns success: false with an
-  // explanatory error until that height is attested, so we poll it with a
-  // capped backoff rather than submitting on a guess.
   const proofBuilder = new proofProvider.service.ProofBuilder(cfg.sourceChainKey, cfg.proofBuilderUrl);
+  const { headerNumber, txBytes, merkleProof, continuityProof } = await getProofWithRetry(
+    proofBuilder,
+    event.txHash,
+    cfg.proofMaxAttempts,
+    cfg.proofRetryBaseMs,
+    cfg.proofRetryMaxMs
+  );
 
-  let proofResult = await proofBuilder.getProof(event.txHash);
-  let attempts = 0;
-  const maxAttempts = 20;
-  while (!proofResult.success && attempts < maxAttempts) {
-    attempts += 1;
-    console.log(
-      `[worker] proof not ready yet for tx ${event.txHash} (${proofResult.error ?? "unknown reason"}), retrying (${attempts}/${maxAttempts})...`
-    );
-    await new Promise((resolve) => setTimeout(resolve, 10_000));
-    proofResult = await proofBuilder.getProof(event.txHash);
-  }
-
-  if (!proofResult.success || !proofResult.data) {
-    console.error(`[worker] proof generation failed after ${attempts} attempts: ${proofResult.error}`);
-    return;
-  }
-
-  const { headerNumber, txBytes, merkleProof, continuityProof } = proofResult.data;
-
-  // Step 3: underwriting sees the verified event + proof facts. It produces
-  // a structured proposal only; it has no transaction-signing or funding
-  // authority. The proposal is deterministically bounded before it is logged.
   const underwritingEvidence: UnderwritingEvidence = {
     request,
     history,
     deliveryVerified: true,
     proofVerified: true,
-    // Timestamp enrichment is intentionally optional in v1. The security
-    // envelope does not depend on this advisory field.
     invoiceAgeSeconds: 0,
   };
   const underwriting = await underwrite(underwritingEvidence);
@@ -165,17 +182,6 @@ async function handleDeliveryConfirmed(
   const routing = routeReview(request, decision, underwriting);
   console.log(`[worker] review route: ${routing.route} — ${routing.reason}`);
 
-  // The review route is deliberately not an execution authorization. In v1,
-  // an AI escalation is surfaced to operators/audit logs while the existing
-  // deterministic policy and on-chain manager remain the only safety gates.
-  // In particular, AI_REVIEW_RECOMMENDED must never be described as a hard
-  // pre-funding hold unless a future on-chain/manual-review mechanism is added.
-
-  // Step 5: submit to Creditcoin. AttestGuardManager independently
-  // re-verifies the proof and re-runs its own policy gate — this call can
-  // still result in AdvanceFlaggedForConfirmation on-chain even though our
-  // own pre-check above said AUTO_APPROVE, if on-chain state has since
-  // moved (e.g. another advance consumed the daily cap in the meantime).
   const submitTx = await manager.fundAdvanceFromQuery(
     event.invoiceId,
     headerNumber,
@@ -199,7 +205,6 @@ async function main() {
   const sourceProvider = new ethers.JsonRpcProvider(cfg.sourceChainRpcUrl);
   const tradeContract = new Contract(cfg.sourceTradeConfirmationAddress, tradeAbi, sourceProvider);
 
-  // Sanity check: confirm we're pointed at chains that agree on chainKey.
   const infoProvider = new chainInfo.PrecompileChainInfoProvider(
     creditcoinProvider as unknown as ConstructorParameters<typeof chainInfo.PrecompileChainInfoProvider>[0]
   );
@@ -209,30 +214,56 @@ async function main() {
   console.log("[worker] AttestGuard agent started. Watching for DeliveryConfirmed events...");
 
   let fromBlock = await sourceProvider.getBlockNumber();
+  const pending = new Map<string, PendingDelivery>();
+
+  const enqueue = (event: DeliveryEvent) => {
+    if (!pending.has(event.invoiceId)) {
+      pending.set(event.invoiceId, { event, attempts: 0, nextRetryAt: Date.now() });
+      console.log(`[worker] queued invoice ${event.invoiceId} for processing`);
+    }
+  };
+
+  const processPending = async () => {
+    for (const [invoiceId, item] of pending) {
+      if (Date.now() < item.nextRetryAt) continue;
+
+      try {
+        await handleDeliveryConfirmed(cfg, manager, item.event);
+        pending.delete(invoiceId);
+        if (item.attempts > 0) {
+          console.log(`[worker] RECOVERED invoice ${invoiceId} after ${item.attempts} retry cycle(s)`);
+        }
+      } catch (err) {
+        item.attempts += 1;
+        const delayMs = exponentialBackoffMs(item.attempts - 1, cfg.eventRetryBaseMs, cfg.eventRetryMaxMs);
+        item.nextRetryAt = Date.now() + delayMs;
+        console.error(
+          `[worker] FAILED invoice ${invoiceId}; keeping it queued for recovery in ${delayMs}ms (retry cycle ${item.attempts}):`,
+          err
+        );
+      }
+    }
+  };
 
   const poll = async () => {
     const toBlock = await sourceProvider.getBlockNumber();
-    if (toBlock < fromBlock) return;
+    if (toBlock >= fromBlock) {
+      const events = await tradeContract.queryFilter(
+        tradeContract.filters.DeliveryConfirmed(),
+        fromBlock,
+        toBlock
+      );
 
-    const events = await tradeContract.queryFilter(
-      tradeContract.filters.DeliveryConfirmed(),
-      fromBlock,
-      toBlock
-    );
+      for (const ev of events) {
+        const anyEv = ev as ethers.EventLog;
+        const [invoiceId, buyer, supplier, amount] = anyEv.args as unknown as [string, string, string, bigint];
+        enqueue({ invoiceId, buyer, supplier, amount, txHash: ev.transactionHash });
+      }
 
-    for (const ev of events) {
-      const anyEv = ev as ethers.EventLog;
-      const [invoiceId, buyer, supplier, amount] = anyEv.args as unknown as [string, string, string, bigint];
-      await handleDeliveryConfirmed(cfg, manager, {
-        invoiceId,
-        buyer,
-        supplier,
-        amount,
-        txHash: ev.transactionHash,
-      }).catch((err) => console.error("[worker] error handling event:", err));
+      fromBlock = toBlock + 1;
     }
 
-    fromBlock = toBlock + 1;
+    await processPending();
   };
 
   // eslint-disable-next-line no-constant-condition
