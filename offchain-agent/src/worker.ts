@@ -8,6 +8,7 @@ import { evaluateAdvancePolicy } from "./policy.js";
 import { explainDecision } from "./explain.js";
 import { routeReview } from "./routing.js";
 import { underwrite } from "./underwriter.js";
+import { hashUnderwritingDecision } from "./decision.js";
 import { loadVerifiedSupplierHistory } from "./history.js";
 import type { AdvanceRequest, UnderwritingEvidence } from "./types.js";
 
@@ -175,8 +176,9 @@ async function handleDeliveryConfirmed(
     invoiceAgeSeconds: 0,
   };
   const underwriting = await underwrite(underwritingEvidence);
+  const decisionHash = hashUnderwritingDecision(underwriting);
   console.log(
-    `[worker] bounded underwriting: tier=${underwriting.riskTier} recommendation=${underwriting.recommendedAdvance} confidence=${underwriting.confidenceBps}bps evidence=${underwriting.evidenceHash}`
+    `[worker] bounded underwriting: tier=${underwriting.riskTier} recommendation=${underwriting.recommendedAdvance} confidence=${underwriting.confidenceBps}bps evidence=${underwriting.evidenceHash} decision=${decisionHash}`
   );
 
   const routing = routeReview(request, decision, underwriting);
