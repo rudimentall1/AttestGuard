@@ -58,6 +58,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     error ProofVerificationFailed();
     error TransactionDidNotSucceed();
     error NoMatchingDeliveryEvent();
+    error DeliveryAmountMismatch();
     error NoMatchingRepaymentEvent();
     error RepaymentAmountTooLow(uint256 provided, uint256 required);
     error UnknownAdvance();
@@ -176,8 +177,9 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
             if (log.topics.length < 3) continue;
             if (log.topics[1] != advance.invoiceId) continue;
             if (address(uint160(uint256(log.topics[2]))) != advance.buyer) continue;
-            (address eventSupplier, ) = abi.decode(log.data, (address, uint256));
+            (address eventSupplier, uint256 eventAmount) = abi.decode(log.data, (address, uint256));
             if (eventSupplier != advance.supplier) continue;
+            if (eventAmount != advance.invoiceAmount) revert DeliveryAmountMismatch();
             matched = true;
             break;
         }
