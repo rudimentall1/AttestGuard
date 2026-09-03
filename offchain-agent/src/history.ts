@@ -3,7 +3,7 @@ import type { SupplierHistory } from "./types.js";
 
 export interface HistoryLookupOptions {
   fromBlock: number;
-  toBlock?: number;
+  toBlock: number;
 }
 
 /**
@@ -25,9 +25,7 @@ export async function loadVerifiedSupplierHistory(
   if (!Number.isInteger(opts.fromBlock) || opts.fromBlock < 0) {
     throw new Error("history fromBlock must be a non-negative integer");
   }
-
-  const toBlock = opts.toBlock ?? (await manager.runner?.provider?.getBlockNumber?.());
-  if (!Number.isInteger(toBlock) || (toBlock as number) < opts.fromBlock) {
+  if (!Number.isInteger(opts.toBlock) || opts.toBlock < opts.fromBlock) {
     throw new Error("history toBlock must be at or above fromBlock");
   }
 
@@ -38,7 +36,7 @@ export async function loadVerifiedSupplierHistory(
   const registrations = await manager.queryFilter(
     manager.filters.AdvanceRegistered(null, supplier, buyer),
     opts.fromBlock,
-    toBlock as number
+    opts.toBlock
   );
 
   const invoiceIds = registrations
@@ -53,7 +51,7 @@ export async function loadVerifiedSupplierHistory(
     const events = await manager.queryFilter(
       manager.filters.RepaymentAcknowledged(invoiceId),
       opts.fromBlock,
-      toBlock as number
+      opts.toBlock
     );
     if (events.length > 0) repayments.add(invoiceId.toLowerCase());
   }
