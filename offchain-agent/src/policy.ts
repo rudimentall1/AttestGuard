@@ -8,10 +8,13 @@ import type { AdvanceRequest, SupplierHistory, PolicyDecision } from "./types.js
  * is deliberately kept in close mirror-step with that Solidity logic so the
  * two rarely disagree, but if they ever do, the chain wins.
  *
- * This mirrors a lesson learned the hard way in an earlier project: an
- * "advisory-only" check that an agent can silently skip is not a safety
- * boundary. Here, the off-chain check is explicitly *only* an optimization;
- * the boundary is the smart contract.
+ * Security invariant: a WARN may only be used for conditions that the
+ * on-chain path can itself turn into PendingConfirmation. Relationship
+ * history is currently off-chain evidence, so a WARN on defaults or a new
+ * buyer relationship could otherwise be followed by fundAdvanceFromQuery and
+ * accidentally become an automatic on-chain payment. Those conditions are
+ * therefore BLOCKed here until the corresponding evidence is enforced
+ * on-chain or a dedicated manual-review submission path exists.
  */
 export function evaluateAdvancePolicy(
   request: AdvanceRequest,
@@ -30,8 +33,8 @@ export function evaluateAdvancePolicy(
 
   if (history.priorDefaultsWithThisBuyer > 0) {
     return {
-      verdict: "WARN",
-      reason: `buyer has ${history.priorDefaultsWithThisBuyer} prior default(s) on record; needs human review even though this event will still be independently verified on-chain`,
+      verdict: "BLOCK",
+      reason: `buyer has ${history.priorDefaultsWithThisBuyer} prior default(s) on record; automatic funding is disabled because this relationship evidence is not yet enforced on-chain`,
     };
   }
 
@@ -53,8 +56,8 @@ export function evaluateAdvancePolicy(
 
   if (history.priorAdvancesWithThisBuyer === 0) {
     return {
-      verdict: "WARN",
-      reason: "first advance ever tied to this buyer relationship; within caps, but flagged for visibility",
+      verdict: "BLOCK",
+      reason: "first advance ever tied to this buyer relationship; automatic funding is disabled until a dedicated manual-review path or on-chain relationship policy exists",
     };
   }
 
