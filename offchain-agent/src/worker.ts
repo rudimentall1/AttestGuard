@@ -6,6 +6,7 @@ import managerAbi from "../../contracts/abi/AttestGuardManager.json" with { type
 import tradeAbi from "../../contracts/abi/TradeConfirmation.json" with { type: "json" };
 import { evaluateAdvancePolicy } from "./policy.js";
 import { explainDecision } from "./explain.js";
+import { routeReview } from "./routing.js";
 import { underwrite } from "./underwriter.js";
 import type { AdvanceRequest, SupplierHistory, UnderwritingEvidence } from "./types.js";
 
@@ -19,12 +20,15 @@ import type { AdvanceRequest, SupplierHistory, UnderwritingEvidence } from "./ty
  *      fetch an inclusion proof via the Attestcoin Prover service.
  *   3. Run the deterministic policy pre-check and produce a bounded AI
  *      underwriting proposal from the verified evidence.
- *   4. Submit the proof to AttestGuardManager.fundAdvanceFromQuery — where
+ *   4. Derive a monotonic review route: AI may escalate human attention but
+ *      can never weaken a deterministic WARN/BLOCK decision.
+ *   5. Submit the proof to AttestGuardManager.fundAdvanceFromQuery — where
  *      the *real*, unbypassable policy check happens on-chain.
  *
- * The AI underwriter is advisory: it can recommend and explain risk, but it
- * cannot authorize funding, override verified facts, or exceed the
- * deterministic policy envelope. The smart contract remains authoritative.
+ * The AI underwriter and review routing are advisory: they can recommend and
+ * explain risk, but they cannot authorize funding, override verified facts,
+ * or exceed/weaken the deterministic policy envelope. The smart contract
+ * remains authoritative.
  */
 
 interface WorkerConfig {
@@ -154,7 +158,16 @@ async function handleDeliveryConfirmed(
     `[worker] bounded underwriting: tier=${underwriting.riskTier} recommendation=${underwriting.recommendedAdvance} confidence=${underwriting.confidenceBps}bps evidence=${underwriting.evidenceHash}`
   );
 
-  // Step 4: submit to Creditcoin. AttestGuardManager independently
+  const routing = routeReview(request, decision, underwriting);
+  console.log(`[worker] review route: ${routing.route} — ${routing.reason}`);
+
+  // The review route is deliberately not an execution authorization. In v1,
+  // an AI escalation is surfaced to operators/audit logs while the existing
+  // deterministic policy and on-chain manager remain the only safety gates.
+  // In particular, AI_REVIEW_RECOMMENDED must never be described as a hard
+  // pre-funding hold unless a future on-chain/manual-review mechanism is added.
+
+  // Step 5: submit to Creditcoin. AttestGuardManager independently
   // re-verifies the proof and re-runs its own policy gate — this call can
   // still result in AdvanceFlaggedForConfirmation on-chain even though our
   // own pre-check above said AUTO_APPROVE, if on-chain state has since
