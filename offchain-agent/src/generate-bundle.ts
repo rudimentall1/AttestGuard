@@ -1,10 +1,12 @@
-﻿import fs from "node:fs";
+import fs from "node:fs";
 import crypto from "node:crypto";
 
-const report = fs.readFileSync(
-  "artifacts/underwriting-report.json",
-  "utf8"
-);
+import { createProofBundle } from "./proof/proof-bundle.js";
+import { verifyProofBundle } from "./proof/proof-verifier.js";
+
+const reportPath = "artifacts/underwriting-report.json";
+
+const report = fs.readFileSync(reportPath, "utf8");
 
 const reportHash =
   "0x" +
@@ -13,57 +15,25 @@ const reportHash =
     .update(report)
     .digest("hex");
 
+const bundle = createProofBundle({
+  invoiceId: "demo-invoice",
+  decisionHash: reportHash,
+  evidenceHash: reportHash,
+  aiTraceHash: reportHash,
+  policyDecision: "APPROVE",
+  policyReason: "Passed deterministic policy checks",
+  aiRecommendation: "APPROVE",
+  riskTier: "LOW",
+  reportHash,
+  timestamp: new Date().toISOString()
+});
 
-const bundle = {
-  protocol: "AttestGuard",
-
-  artifact: {
-    type: "AI_UNDERWRITING_PROOF",
-    version: "1.0"
-  },
-
-  hashes: {
-    evidenceHash: "0xevidence123456789",
-    aiTraceHash: "0xaitrace123456789",
-    reportHash
-  },
-
-  verification: {
-    reportIntegrity: true,
-    policyIntegrity: true,
-    aiBoundaryIntegrity: true
-  },
-
-  blockchain: {
-    commitment: "READY"
-  },
-
-  generatedAt: new Date().toISOString()
-};
-
+verifyProofBundle(bundle);
 
 fs.writeFileSync(
   "artifacts/attestguard-proof-bundle.json",
-  JSON.stringify(bundle,null,2)
+  JSON.stringify(bundle, null, 2)
 );
 
-
-console.log("");
-console.log("=================================");
-console.log(" ATTESTGUARD PROOF BUNDLE");
-console.log("=================================");
-console.log("");
-
-console.log("✔ Report hash generated");
-console.log("✔ Evidence linked");
-console.log("✔ AI trace linked");
-console.log("✔ Integrity verified");
-console.log("✔ Blockchain commitment ready");
-
-console.log("");
-
-console.log(
-  "Artifact: artifacts/attestguard-proof-bundle.json"
-);
-
-console.log("");
+console.log("Proof bundle generated:");
+console.log("artifacts/attestguard-proof-bundle.json");
