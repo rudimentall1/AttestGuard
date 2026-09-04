@@ -32,3 +32,26 @@ test("report hash changes after tampering", () => {
     hashReport(modified)
   );
 });
+
+test("report hash changes after AI trace tampering", () => {
+  const original = {
+    decisionId: "0x123",
+    ai: {
+      recommendation: "REVIEW",
+      traceHash: "0xaaa",
+    },
+  };
+
+  const modified = {
+    decisionId: "0x123",
+    ai: {
+      recommendation: "REVIEW",
+      traceHash: "0xbbb",
+    },
+  };
+
+  assert.notEqual(
+    hashReport(original),
+    hashReport(modified)
+  );
+});
