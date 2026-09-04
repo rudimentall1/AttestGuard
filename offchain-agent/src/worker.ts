@@ -251,6 +251,9 @@ async function handleDeliveryConfirmed(
           ? "BLOCK"
           : "REVIEW",
     confidence: underwriting.confidenceBps / 10000,
+    evidenceHash: underwriting.evidenceHash,
+    riskFlags: underwriting.riskFlags,
+    routingRoute: routing.route,
     reasonCodes: [routing.reason],
     timestamp: new Date().toISOString(),
   });
