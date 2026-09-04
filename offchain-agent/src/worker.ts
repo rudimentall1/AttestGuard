@@ -10,6 +10,7 @@ import { explainDecision } from "./explain.js";
 import { routeReview, shouldHoldForReview } from "./routing.js";
 import { underwrite } from "./underwriter.js";
 import { hashUnderwritingDecision } from "./decision.js";
+import { hashAuditTrace } from "./audit-hash.js";
 import { loadVerifiedSupplierHistory } from "./history.js";
 import { ensureUnderwritingDecisionRecorded } from "./underwriting-recording.js";
 import { appendUnderwritingAuditEvent } from "./audit-trail.js";
@@ -237,6 +238,7 @@ async function handleDeliveryConfirmed(
   };
   const underwriting = await underwrite(underwritingEvidence);
   const decisionHash = hashUnderwritingDecision(underwriting);
+
   console.log(
     `[worker] bounded underwriting: tier=${underwriting.riskTier} recommendation=${underwriting.recommendedAdvance} confidence=${underwriting.confidenceBps}bps evidence=${underwriting.evidenceHash} decision=${decisionHash}`
   );
@@ -255,11 +257,23 @@ async function handleDeliveryConfirmed(
       : routing.route,
     aiRecommendation
   );
+
+
+  const aiTraceHash = hashAuditTrace({
+    decisionHash,
+    aiApplied: boundedAI.aiApplied,
+    aiReason: boundedAI.reason,
+    aiFinalRoute: boundedAI.route,
+    routingRoute: routing.route,
+    reasonCodes: [routing.reason],
+  });
+
   console.log(`[worker] review route: ${routing.route} — ${routing.reason}`);
 
   appendUnderwritingAuditEvent(cfg.auditTrailPath, {
     invoiceId: event.invoiceId,
     decisionHash,
+    aiTraceHash,
     policyDecision: decision.verdict === "AUTO_APPROVE" ? "AUTO" : decision.verdict,
     aiRiskTier: underwriting.riskTier,
     recommendation:

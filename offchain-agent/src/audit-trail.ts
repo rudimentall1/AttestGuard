@@ -3,6 +3,7 @@ import fs from "node:fs";
 export type UnderwritingAuditEvent = {
   invoiceId: string;
   decisionHash: string;
+  aiTraceHash?: string;
   policyDecision: "AUTO" | "WARN" | "BLOCK";
   aiRiskTier?: "A" | "B" | "C" | "D";
   recommendation:
