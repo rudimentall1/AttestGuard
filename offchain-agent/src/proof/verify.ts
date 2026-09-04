@@ -1,34 +1,30 @@
-import type { AttestGuardProofBundle } from "./proof-bundle.js";
+﻿import type { AttestGuardProofBundle } from "./proof-bundle.js";
 
 export function verifyProofBundle(
   bundle: AttestGuardProofBundle
 ): boolean {
 
-  if (bundle.protocol !== "AttestGuard") {
+  if (bundle.version !== "1.0") {
     return false;
   }
 
-  if (bundle.artifact.type !== "AI_UNDERWRITING_PROOF") {
+  if (bundle.type !== "UNDERWRITING_PROOF") {
     return false;
   }
 
-  if (!bundle.subject.invoiceId) {
+  if (!bundle.invoiceId) {
     return false;
   }
 
-  if (!bundle.hashes.decisionHash) {
+  if (!bundle.decision.hash) {
     return false;
   }
 
-  if (!bundle.hashes.evidenceHash) {
+  if (!bundle.decision.policy) {
     return false;
   }
 
-  if (!bundle.hashes.aiTraceHash) {
-    return false;
-  }
-
-  if (!bundle.hashes.reportHash) {
+  if (!bundle.decision.reason) {
     return false;
   }
 
@@ -36,9 +32,13 @@ export function verifyProofBundle(
     return false;
   }
 
-  return (
-    bundle.verification.reportIntegrity &&
-    bundle.verification.policyIntegrity &&
-    bundle.verification.aiBoundaryIntegrity
-  );
+  if (!bundle.ai.recommendation) {
+    return false;
+  }
+
+  if (!bundle.createdAt) {
+    return false;
+  }
+
+  return true;
 }

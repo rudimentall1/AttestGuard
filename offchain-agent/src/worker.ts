@@ -19,7 +19,7 @@ import { verifyReportIntegrity } from "./report-verify.js";
 import { applyAIBoundary } from "./ai-boundary.js";
 import { hashReport } from "./report-hash.js";
 import { createProofBundle } from "./proof/proof-bundle.js";
-import { writeProofArtifact } from "./proof/artifact.js";
+import { writeProofBundleArtifact } from "./proof/artifact.js";
 import { verifyProofBundle } from "./proof/verify.js";
 import type { AdvanceRequest, UnderwritingEvidence } from "./types.js";
 
@@ -279,8 +279,8 @@ async function handleDeliveryConfirmed(
     decisionHash,
     aiTraceHash,
     policyDecision: decision.verdict === "AUTO_APPROVE" ? "AUTO" : decision.verdict,
-    aiRiskTier: underwriting.riskTier,
-    recommendation:
+    timestamp: new Date().toISOString(),
+recommendation:
       routing.route === "AUTO_PATH"
         ? "APPROVE"
         : routing.route === "BLOCKED_BY_POLICY"
@@ -303,7 +303,7 @@ async function handleDeliveryConfirmed(
     aiReason: boundedAI.reason,
     aiFinalRoute: boundedAI.route,
     reasonCodes: [routing.reason],
-    timestamp: new Date().toISOString(),
+    
   });
   const report = {
     reportVersion: "1.0" as const,
@@ -323,7 +323,8 @@ async function handleDeliveryConfirmed(
             ? "BLOCK"
             : "REVIEW") as "APPROVE" | "BLOCK" | "REVIEW",
       riskTier: underwriting.riskTier,
-      confidence: underwriting.confidenceBps / 10000,
+    timestamp: new Date().toISOString(),
+confidence: underwriting.confidenceBps / 10000,
     },
 
     policy: {
@@ -370,13 +371,14 @@ async function handleDeliveryConfirmed(
     policyReason: decision.reason,
     aiRecommendation: boundedAI.route,
     riskTier: underwriting.riskTier,
-  });
+    timestamp: new Date().toISOString(),
+});
 
   if (!verifyProofBundle(proofBundle)) {
     throw new Error("proof bundle verification failed");
   }
 
-  writeProofArtifact(
+  writeProofBundleArtifact(
     "./artifacts/attestguard-proof-bundle.json",
     proofBundle
   );
@@ -500,6 +502,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   });
 }
+
+
+
+
+
+
 
 
 

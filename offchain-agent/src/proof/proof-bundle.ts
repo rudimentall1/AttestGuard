@@ -1,4 +1,4 @@
-export interface ProofBundleInput {
+﻿export interface ProofBundleInput {
   invoiceId: string;
   decisionHash: string;
   evidenceHash?: string;
@@ -62,3 +62,4 @@ export function createProofBundle(
     createdAt: input.timestamp,
   };
 }
+

@@ -1,4 +1,4 @@
-import test from "node:test";
+﻿import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createProofBundle } from "./proof-bundle.js";
@@ -15,6 +15,7 @@ test("valid proof bundle passes verification", () => {
     policyReason: "trusted supplier",
     aiRecommendation: "AUTO_PATH",
     riskTier: "A",
+    timestamp: "2026-01-01T00:00:00.000Z",
   });
 
   assert.equal(
@@ -35,6 +36,7 @@ test("tampered proof bundle fails verification", () => {
     policyReason: "trusted supplier",
     aiRecommendation: "AUTO_PATH",
     riskTier: "A",
+    timestamp: "2026-01-01T00:00:00.000Z",
   });
 
   bundle.ai.authority = "UNSAFE" as never;
