@@ -11,10 +11,12 @@ import { routeReview, shouldHoldForReview } from "./routing.js";
 import { underwrite } from "./underwriter.js";
 import { hashUnderwritingDecision } from "./decision.js";
 import { loadVerifiedSupplierHistory } from "./history.js";
+import { ensureUnderwritingDecisionRecorded } from "./underwriting-recording.js";
 import type { AdvanceRequest, UnderwritingEvidence } from "./types.js";
 
 const underwritingDecisionAbi = [
   "function recordUnderwritingDecision(bytes32 invoiceId, bytes32 decisionHash) external",
+  "function underwritingDecisionHash(bytes32 invoiceId) view returns (bytes32)",
 ];
 
 interface WorkerConfig {
@@ -83,12 +85,48 @@ function loadConfig(): WorkerConfig {
   };
 }
 
-function appendToReviewQueue(
+export function appendToReviewQueue(
   path: string,
   entry: { invoiceId: string; reason: string; decisionHash: string; queuedAt: string }
-): void {
+): boolean {
+  if (fs.existsSync(path)) {
+    const existing = fs.readFileSync(path, "utf8");
+
+    for (const line of existing.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+
+      try {
+        const queued = JSON.parse(line) as {
+          invoiceId?: unknown;
+          decisionHash?: unknown;
+        };
+
+        if (
+          queued.invoiceId === entry.invoiceId &&
+          queued.decisionHash === entry.decisionHash
+        ) {
+          console.log(
+            `[worker] AI review already queued for ${entry.invoiceId}; reusing existing queue entry`
+          );
+          return false;
+        }
+      } catch {
+        // Ignore malformed historical lines.
+      }
+    }
+  }
+
+  const directory = path.replace(/[\\/][^\\/]+$/, "");
+
+  if (directory && !fs.existsSync(directory)) {
+    fs.mkdirSync(directory, { recursive: true });
+  }
+
   fs.appendFileSync(path, JSON.stringify(entry) + "\n", "utf8");
+
+  return true;
 }
+
 export function exponentialBackoffMs(attempt: number, baseMs: number, maxMs: number): number {
   if (!Number.isInteger(attempt) || attempt < 0) throw new Error("attempt must be a non-negative integer");
   return Math.min(maxMs, baseMs * 2 ** attempt);
@@ -197,12 +235,17 @@ async function handleDeliveryConfirmed(
 
   const routing = routeReview(request, decision, underwriting);
   console.log(`[worker] review route: ${routing.route} — ${routing.reason}`);
+  const decisionRecorder = new Contract(
+    cfg.managerAddress,
+    underwritingDecisionAbi,
+    creditcoinWallet
+  );
 
-  const decisionRecorder = new Contract(cfg.managerAddress, underwritingDecisionAbi, creditcoinWallet);
-  const recordTx = await decisionRecorder.recordUnderwritingDecision(event.invoiceId, decisionHash);
-  const recordReceipt = await recordTx.wait();
-  console.log(`[worker] recorded underwriting decision on-chain, tx hash: ${recordReceipt?.hash}`);
-
+  await ensureUnderwritingDecisionRecorded(
+    decisionRecorder,
+    event.invoiceId,
+    decisionHash
+  );
   if (shouldHoldForReview(routing.route)) {
     appendToReviewQueue(cfg.reviewQueuePath, {
       invoiceId: event.invoiceId,
@@ -304,7 +347,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error("[worker] fatal error:", err);
-  process.exit(1);
-});
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err) => {
+    console.error("[worker] fatal error:", err);
+    process.exit(1);
+  });
+}
