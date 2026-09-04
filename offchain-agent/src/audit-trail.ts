@@ -1,4 +1,4 @@
-﻿import fs from "node:fs";
+import fs from "node:fs";
 
 export type UnderwritingAuditEvent = {
   invoiceId: string;
@@ -10,6 +10,14 @@ export type UnderwritingAuditEvent = {
     | "REVIEW"
     | "BLOCK";
   confidence?: number;
+  explanation?: string;
+  evidenceHash?: string;
+  riskFlags?: string[];
+  routingRoute?:
+    | "BLOCKED_BY_POLICY"
+    | "ONCHAIN_GUARDIAN_REVIEW"
+    | "AI_REVIEW_RECOMMENDED"
+    | "AUTO_PATH";
   reasonCodes: string[];
   timestamp: string;
 };

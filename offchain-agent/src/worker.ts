@@ -251,6 +251,7 @@ async function handleDeliveryConfirmed(
           ? "BLOCK"
           : "REVIEW",
     confidence: underwriting.confidenceBps / 10000,
+    explanation: note,
     evidenceHash: underwriting.evidenceHash,
     riskFlags: underwriting.riskFlags,
     routingRoute: routing.route,
