@@ -263,3 +263,38 @@ verified. The old key must not be reused.
 ## License
 
 MIT — see LICENSE. Third-party attribution in contracts/lib/NOTICE.md.
+
+## Agent Integrity Demo
+
+AttestGuard demonstrates a bounded AI underwriting agent with deterministic security controls.
+
+The agent produces:
+
+- deterministic decision identity
+- evidence hash commitment
+- AI trace hash commitment
+- tamper-resistant underwriting report
+- integrity verification before persistence
+
+Run demo:
+
+```bash
+npm run build:agent
+npm run demo:agent
+
+Example output:
+
+Policy:
+AUTO_APPROVE
+
+Risk Tier:
+A
+
+Integrity:
+VERIFIED
+
+Blockchain Commitment:
+READY
+
+The AI layer cannot override deterministic policy decisions.
+All underwriting artifacts are integrity checked before storage.
