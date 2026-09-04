@@ -1,4 +1,4 @@
-﻿import fs from "node:fs";
+import fs from "node:fs";
 
 export type UnderwritingDecisionReport = {
   reportVersion: "1.0";
@@ -19,6 +19,7 @@ export type UnderwritingDecisionReport = {
   ai: {
     explanation?: string;
     recommendation: string;
+    traceHash?: string;
   };
 
   evidence: {
