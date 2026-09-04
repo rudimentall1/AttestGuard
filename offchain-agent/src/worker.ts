@@ -12,6 +12,9 @@ import { underwrite } from "./underwriter.js";
 import { hashUnderwritingDecision } from "./decision.js";
 import { loadVerifiedSupplierHistory } from "./history.js";
 import { ensureUnderwritingDecisionRecorded } from "./underwriting-recording.js";
+import { appendUnderwritingAuditEvent } from "./audit-trail.js";
+import { writeUnderwritingReport } from "./report.js";
+import { hashReport } from "./report-hash.js";
 import type { AdvanceRequest, UnderwritingEvidence } from "./types.js";
 
 const underwritingDecisionAbi = [
@@ -35,6 +38,8 @@ interface WorkerConfig {
   eventRetryBaseMs: number;
   eventRetryMaxMs: number;
   reviewQueuePath: string;
+  auditTrailPath: string;
+  reportPath: string;
 }
 
 export interface DeliveryEvent {
@@ -82,6 +87,8 @@ function loadConfig(): WorkerConfig {
     eventRetryBaseMs: envPositiveInt("EVENT_RETRY_BASE_MS", 15000),
     eventRetryMaxMs: envPositiveInt("EVENT_RETRY_MAX_MS", 120000),
     reviewQueuePath: process.env.AI_REVIEW_QUEUE_PATH ?? "./ai-review-queue.jsonl",
+    auditTrailPath: process.env.AI_AUDIT_TRAIL_PATH ?? "./audit/underwriting-events.jsonl",
+    reportPath: process.env.AI_REPORT_PATH ?? "./audit/underwriting-report.json",
   };
 }
 
@@ -235,6 +242,78 @@ async function handleDeliveryConfirmed(
 
   const routing = routeReview(request, decision, underwriting);
   console.log(`[worker] review route: ${routing.route} — ${routing.reason}`);
+
+  appendUnderwritingAuditEvent(cfg.auditTrailPath, {
+    invoiceId: event.invoiceId,
+    decisionHash,
+    policyDecision: decision.verdict === "AUTO_APPROVE" ? "AUTO" : decision.verdict,
+    aiRiskTier: underwriting.riskTier,
+    recommendation:
+      routing.route === "AUTO_PATH"
+        ? "APPROVE"
+        : routing.route === "BLOCKED_BY_POLICY"
+          ? "BLOCK"
+          : "REVIEW",
+    confidence: underwriting.confidenceBps / 10000,
+    explanation: note,
+    deterministicReason: decision.reason,
+    finalOutcome:
+      routing.route === "AUTO_PATH"
+        ? "APPROVE"
+        : routing.route === "BLOCKED_BY_POLICY"
+          ? "BLOCK"
+          : "REVIEW",
+    requiresHumanReview: shouldHoldForReview(routing.route),
+    evidenceHash: underwriting.evidenceHash,
+    riskFlags: underwriting.riskFlags,
+    routingRoute: routing.route,
+    reasonCodes: [routing.reason],
+    timestamp: new Date().toISOString(),
+  });
+  const report = {
+    reportVersion: "1.0" as const,
+    decisionId: decisionHash,
+
+    summary: {
+      outcome:
+        (routing.route === "AUTO_PATH"
+          ? "APPROVE"
+          : routing.route === "BLOCKED_BY_POLICY"
+            ? "BLOCK"
+            : "REVIEW") as "APPROVE" | "BLOCK" | "REVIEW",
+      riskTier: underwriting.riskTier,
+      confidence: underwriting.confidenceBps / 10000,
+    },
+
+    policy: {
+      verdict: decision.verdict,
+      reason: decision.reason,
+    },
+
+    ai: {
+      explanation: note,
+      recommendation: routing.route,
+    },
+
+    evidence: {
+      hash: underwriting.evidenceHash,
+      flags: underwriting.riskFlags,
+    },
+
+    review: {
+      required: shouldHoldForReview(routing.route),
+    },
+
+    timestamp: new Date().toISOString(),
+  };
+
+  const reportHash = hashReport(report);
+
+  writeUnderwritingReport(cfg.reportPath, {
+    ...report,
+    reportHash,
+  });
+
   const decisionRecorder = new Contract(
     cfg.managerAddress,
     underwritingDecisionAbi,
