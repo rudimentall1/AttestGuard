@@ -14,6 +14,7 @@ import { loadVerifiedSupplierHistory } from "./history.js";
 import { ensureUnderwritingDecisionRecorded } from "./underwriting-recording.js";
 import { appendUnderwritingAuditEvent } from "./audit-trail.js";
 import { writeUnderwritingReport } from "./report.js";
+import { hashReport } from "./report-hash.js";
 import type { AdvanceRequest, UnderwritingEvidence } from "./types.js";
 
 const underwritingDecisionAbi = [
@@ -269,17 +270,17 @@ async function handleDeliveryConfirmed(
     reasonCodes: [routing.reason],
     timestamp: new Date().toISOString(),
   });
-  writeUnderwritingReport(cfg.reportPath, {
-    reportVersion: "1.0",
+  const report = {
+    reportVersion: "1.0" as const,
     decisionId: decisionHash,
 
     summary: {
       outcome:
-        routing.route === "AUTO_PATH"
+        (routing.route === "AUTO_PATH"
           ? "APPROVE"
           : routing.route === "BLOCKED_BY_POLICY"
             ? "BLOCK"
-            : "REVIEW",
+            : "REVIEW") as "APPROVE" | "BLOCK" | "REVIEW",
       riskTier: underwriting.riskTier,
       confidence: underwriting.confidenceBps / 10000,
     },
@@ -304,6 +305,13 @@ async function handleDeliveryConfirmed(
     },
 
     timestamp: new Date().toISOString(),
+  };
+
+  const reportHash = hashReport(report);
+
+  writeUnderwritingReport(cfg.reportPath, {
+    ...report,
+    reportHash,
   });
 
   const decisionRecorder = new Contract(

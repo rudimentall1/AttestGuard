@@ -3,6 +3,7 @@
 export type UnderwritingDecisionReport = {
   reportVersion: "1.0";
   decisionId: string;
+  reportHash?: string;
 
   summary: {
     outcome: "APPROVE" | "REVIEW" | "BLOCK";
