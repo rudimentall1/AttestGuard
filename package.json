@@ -13,7 +13,8 @@
     "deploy:manager": "hardhat run deploy/deploy_manager.ts --network creditcoin_testnet",
     "worker": "node --loader ts-node/esm offchain-agent/src/worker.ts",
     "demo:flow": "node offchain-agent/dist/demo-flow.js",
-    "demo:security": "node offchain-agent/dist/demo-security.js"
+    "demo:security": "node offchain-agent/dist/demo-security.js",
+    "demo:judge": "node offchain-agent/dist/offchain-agent/src/judge-demo.js"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
