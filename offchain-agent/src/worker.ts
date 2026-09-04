@@ -1,4 +1,4 @@
-import "dotenv/config";
+﻿import "dotenv/config";
 import fs from "node:fs";
 import { Contract, ethers } from "ethers";
 import { chainInfo, proofProvider } from "@gluwa/usc-sdk";
@@ -18,6 +18,9 @@ import { writeUnderwritingReport } from "./report.js";
 import { verifyReportIntegrity } from "./report-verify.js";
 import { applyAIBoundary } from "./ai-boundary.js";
 import { hashReport } from "./report-hash.js";
+import { createProofBundle } from "./proof/proof-bundle.js";
+import { writeProofArtifact } from "./proof/artifact.js";
+import { verifyProofBundle } from "./proof/verify.js";
 import type { AdvanceRequest, UnderwritingEvidence } from "./types.js";
 
 const underwritingDecisionAbi = [
@@ -213,7 +216,7 @@ async function handleDeliveryConfirmed(
   console.log(
     `[worker] verified relationship history: prior advances=${history.priorAdvancesWithThisBuyer} prior repayments=${history.priorRepaymentsWithThisBuyer} prior defaults=${history.priorDefaultsWithThisBuyer}`
   );
-  console.log(`[worker] policy pre-check: ${decision.verdict} — ${decision.reason}`);
+  console.log(`[worker] policy pre-check: ${decision.verdict} вЂ” ${decision.reason}`);
   console.log(`[worker] risk note: ${note}`);
 
   if (decision.verdict === "BLOCK") {
@@ -269,7 +272,7 @@ async function handleDeliveryConfirmed(
     reasonCodes: [routing.reason],
   });
 
-  console.log(`[worker] review route: ${routing.route} — ${routing.reason}`);
+  console.log(`[worker] review route: ${routing.route} вЂ” ${routing.reason}`);
 
   appendUnderwritingAuditEvent(cfg.auditTrailPath, {
     invoiceId: event.invoiceId,
@@ -357,6 +360,26 @@ async function handleDeliveryConfirmed(
     throw new Error("underwriting report integrity verification failed");
   }
 
+  const proofBundle = createProofBundle({
+    invoiceId: event.invoiceId,
+    decisionHash,
+    evidenceHash: underwriting.evidenceHash,
+    aiTraceHash,
+    reportHash,
+    policyDecision: decision.verdict,
+    policyReason: decision.reason,
+    aiRecommendation: boundedAI.route,
+    riskTier: underwriting.riskTier,
+  });
+
+  if (!verifyProofBundle(proofBundle)) {
+    throw new Error("proof bundle verification failed");
+  }
+
+  writeProofArtifact(
+    "./artifacts/attestguard-proof-bundle.json",
+    proofBundle
+  );
   writeUnderwritingReport(cfg.reportPath, finalReport);
 
   const decisionRecorder = new Contract(
@@ -377,7 +400,7 @@ async function handleDeliveryConfirmed(
       decisionHash,
       queuedAt: new Date().toISOString(),
     });
-    console.log(`[worker] AI review recommended for invoice ${event.invoiceId} — funding held.`);
+    console.log(`[worker] AI review recommended for invoice ${event.invoiceId} вЂ” funding held.`);
     return;
   }
   const submitTx = await manager.fundAdvanceFromQuery(
@@ -477,3 +500,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   });
 }
+
+
+
+
+
