@@ -324,6 +324,7 @@ async function handleDeliveryConfirmed(
     ai: {
       explanation: note,
       recommendation: routing.route,
+      traceHash: aiTraceHash,
     },
 
     evidence: {
