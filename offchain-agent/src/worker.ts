@@ -15,6 +15,7 @@ import { loadVerifiedSupplierHistory } from "./history.js";
 import { ensureUnderwritingDecisionRecorded } from "./underwriting-recording.js";
 import { appendUnderwritingAuditEvent } from "./audit-trail.js";
 import { writeUnderwritingReport } from "./report.js";
+import { verifyReportIntegrity } from "./report-verify.js";
 import { applyAIBoundary } from "./ai-boundary.js";
 import { hashReport } from "./report-hash.js";
 import type { AdvanceRequest, UnderwritingEvidence } from "./types.js";
@@ -347,10 +348,16 @@ async function handleDeliveryConfirmed(
 
   const reportHash = hashReport(report);
 
-  writeUnderwritingReport(cfg.reportPath, {
+  const finalReport = {
     ...report,
     reportHash,
-  });
+  };
+
+  if (!verifyReportIntegrity(finalReport)) {
+    throw new Error("underwriting report integrity verification failed");
+  }
+
+  writeUnderwritingReport(cfg.reportPath, finalReport);
 
   const decisionRecorder = new Contract(
     cfg.managerAddress,
