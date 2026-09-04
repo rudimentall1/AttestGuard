@@ -252,6 +252,14 @@ async function handleDeliveryConfirmed(
           : "REVIEW",
     confidence: underwriting.confidenceBps / 10000,
     explanation: note,
+    deterministicReason: decision.reason,
+    finalOutcome:
+      routing.route === "AUTO_PATH"
+        ? "APPROVE"
+        : routing.route === "BLOCKED_BY_POLICY"
+          ? "BLOCK"
+          : "REVIEW",
+    requiresHumanReview: shouldHoldForReview(routing.route),
     evidenceHash: underwriting.evidenceHash,
     riskFlags: underwriting.riskFlags,
     routingRoute: routing.route,

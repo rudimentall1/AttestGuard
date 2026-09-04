@@ -11,6 +11,9 @@ export type UnderwritingAuditEvent = {
     | "BLOCK";
   confidence?: number;
   explanation?: string;
+  deterministicReason?: string;
+  finalOutcome?: "APPROVE" | "REVIEW" | "BLOCK";
+  requiresHumanReview?: boolean;
   evidenceHash?: string;
   riskFlags?: string[];
   routingRoute?:
