@@ -9,10 +9,11 @@
     "test:contracts": "hardhat test",
     "test:agent": "node --test offchain-agent/dist/**/*.test.js",
     "build:agent": "tsc -p offchain-agent/tsconfig.json",
-    "demo:agent": "node offchain-agent/dist/offchain-agent/src/demo.js",
+    "demo:agent": "node offchain-agent/dist/demo.js",
     "deploy:manager": "hardhat run deploy/deploy_manager.ts --network creditcoin_testnet",
     "worker": "node --loader ts-node/esm offchain-agent/src/worker.ts",
-    "demo:flow": "node offchain-agent/dist/offchain-agent/src/demo-flow.js"
+    "demo:flow": "node offchain-agent/dist/demo-flow.js",
+    "demo:security": "node offchain-agent/dist/demo-security.js"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
