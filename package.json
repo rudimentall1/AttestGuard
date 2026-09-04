@@ -11,7 +11,8 @@
     "build:agent": "tsc -p offchain-agent/tsconfig.json",
     "demo:agent": "node offchain-agent/dist/offchain-agent/src/demo.js",
     "deploy:manager": "hardhat run deploy/deploy_manager.ts --network creditcoin_testnet",
-    "worker": "node --loader ts-node/esm offchain-agent/src/worker.ts"
+    "worker": "node --loader ts-node/esm offchain-agent/src/worker.ts",
+    "demo:flow": "node offchain-agent/dist/offchain-agent/src/demo-flow.js"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
