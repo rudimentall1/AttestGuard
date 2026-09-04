@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { routeReview } from "../src/routing.js";
+import { routeReview, shouldHoldForReview } from "../src/routing.js";
 import type { AdvanceRequest, PolicyDecision, UnderwritingProposal } from "../src/types.js";
 
 const request: AdvanceRequest = {
@@ -66,4 +66,14 @@ test("policy override signal escalates even with low risk tier", () => {
 test("AI confidence alone never overrides deterministic policy", () => {
   assert.equal(routeReview(request, warn, proposal({ confidenceBps: 10000 })).route, "ONCHAIN_GUARDIAN_REVIEW");
   assert.equal(routeReview(request, block, proposal({ confidenceBps: 10000 })).route, "BLOCKED_BY_POLICY");
+});
+
+test("AI review recommendation is a funding hold", () => {
+  assert.equal(shouldHoldForReview("AI_REVIEW_RECOMMENDED"), true);
+});
+
+test("only AI review recommendation activates the funding hold", () => {
+  assert.equal(shouldHoldForReview("BLOCKED_BY_POLICY"), false);
+  assert.equal(shouldHoldForReview("ONCHAIN_GUARDIAN_REVIEW"), false);
+  assert.equal(shouldHoldForReview("AUTO_PATH"), false);
 });
