@@ -281,6 +281,9 @@ async function handleDeliveryConfirmed(
     evidenceHash: underwriting.evidenceHash,
     riskFlags: underwriting.riskFlags,
     routingRoute: routing.route,
+    aiApplied: boundedAI.aiApplied,
+    aiReason: boundedAI.reason,
+    aiFinalRoute: boundedAI.route,
     reasonCodes: [routing.reason],
     timestamp: new Date().toISOString(),
   });

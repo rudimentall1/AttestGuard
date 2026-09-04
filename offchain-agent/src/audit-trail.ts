@@ -21,6 +21,12 @@ export type UnderwritingAuditEvent = {
     | "ONCHAIN_GUARDIAN_REVIEW"
     | "AI_REVIEW_RECOMMENDED"
     | "AUTO_PATH";
+  aiApplied?: boolean;
+  aiReason?: string;
+  aiFinalRoute?:
+    | "AUTO_PATH"
+    | "REVIEW"
+    | "BLOCKED_BY_POLICY";
   reasonCodes: string[];
   timestamp: string;
 };
