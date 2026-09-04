@@ -16,7 +16,8 @@
     "demo:security": "node offchain-agent/dist/demo-security.js",
     "demo:judge": "node offchain-agent/dist/offchain-agent/src/judge-demo.js",
     "demo": "npm run demo:judge",
-    "report": "node offchain-agent/dist/offchain-agent/src/generate-report.js"
+    "report": "node offchain-agent/dist/offchain-agent/src/generate-report.js",
+    "bundle": "node offchain-agent/dist/offchain-agent/src/generate-bundle.js"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
