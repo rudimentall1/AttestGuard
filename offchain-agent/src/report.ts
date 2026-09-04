@@ -5,6 +5,12 @@ export type UnderwritingDecisionReport = {
   decisionId: string;
   reportHash?: string;
 
+  integrity: {
+    decisionHash: string;
+    evidenceHash?: string;
+    aiTraceHash?: string;
+  };
+
   summary: {
     outcome: "APPROVE" | "REVIEW" | "BLOCK";
     riskTier?: "A" | "B" | "C" | "D";

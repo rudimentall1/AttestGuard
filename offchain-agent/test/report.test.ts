@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -16,6 +16,12 @@ test("underwriting report persists decision artifact", () => {
   writeUnderwritingReport(reportPath, {
     reportVersion: "1.0",
     decisionId: "0x123",
+
+    integrity: {
+      decisionHash: "0x123",
+      evidenceHash: "0xevidence",
+      aiTraceHash: "0xtrace",
+    },
 
     summary: {
       outcome: "APPROVE",

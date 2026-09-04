@@ -305,6 +305,12 @@ async function handleDeliveryConfirmed(
     reportVersion: "1.0" as const,
     decisionId: decisionHash,
 
+    integrity: {
+      decisionHash,
+      evidenceHash: underwriting.evidenceHash,
+      aiTraceHash,
+    },
+
     summary: {
       outcome:
         (routing.route === "AUTO_PATH"
