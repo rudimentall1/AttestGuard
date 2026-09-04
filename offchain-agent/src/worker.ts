@@ -13,6 +13,7 @@ import { hashUnderwritingDecision } from "./decision.js";
 import { loadVerifiedSupplierHistory } from "./history.js";
 import { ensureUnderwritingDecisionRecorded } from "./underwriting-recording.js";
 import { appendUnderwritingAuditEvent } from "./audit-trail.js";
+import { writeUnderwritingReport } from "./report.js";
 import type { AdvanceRequest, UnderwritingEvidence } from "./types.js";
 
 const underwritingDecisionAbi = [
@@ -37,6 +38,7 @@ interface WorkerConfig {
   eventRetryMaxMs: number;
   reviewQueuePath: string;
   auditTrailPath: string;
+  reportPath: string;
 }
 
 export interface DeliveryEvent {
@@ -85,6 +87,7 @@ function loadConfig(): WorkerConfig {
     eventRetryMaxMs: envPositiveInt("EVENT_RETRY_MAX_MS", 120000),
     reviewQueuePath: process.env.AI_REVIEW_QUEUE_PATH ?? "./ai-review-queue.jsonl",
     auditTrailPath: process.env.AI_AUDIT_TRAIL_PATH ?? "./audit/underwriting-events.jsonl",
+    reportPath: process.env.AI_REPORT_PATH ?? "./audit/underwriting-report.json",
   };
 }
 
@@ -266,6 +269,43 @@ async function handleDeliveryConfirmed(
     reasonCodes: [routing.reason],
     timestamp: new Date().toISOString(),
   });
+  writeUnderwritingReport(cfg.reportPath, {
+    reportVersion: "1.0",
+    decisionId: decisionHash,
+
+    summary: {
+      outcome:
+        routing.route === "AUTO_PATH"
+          ? "APPROVE"
+          : routing.route === "BLOCKED_BY_POLICY"
+            ? "BLOCK"
+            : "REVIEW",
+      riskTier: underwriting.riskTier,
+      confidence: underwriting.confidenceBps / 10000,
+    },
+
+    policy: {
+      verdict: decision.verdict,
+      reason: decision.reason,
+    },
+
+    ai: {
+      explanation: note,
+      recommendation: routing.route,
+    },
+
+    evidence: {
+      hash: underwriting.evidenceHash,
+      flags: underwriting.riskFlags,
+    },
+
+    review: {
+      required: shouldHoldForReview(routing.route),
+    },
+
+    timestamp: new Date().toISOString(),
+  });
+
   const decisionRecorder = new Contract(
     cfg.managerAddress,
     underwritingDecisionAbi,
