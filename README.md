@@ -298,3 +298,53 @@ READY
 
 The AI layer cannot override deterministic policy decisions.
 All underwriting artifacts are integrity checked before storage.
+
+## Demo
+
+### Standard underwriting
+
+Run:
+
+npm run demo:agent
+
+
+Shows:
+
+- deterministic decision identity
+- evidence hash
+- AI trace hash
+- report integrity verification
+- blockchain commitment readiness
+
+
+### End-to-end underwriting flow
+
+Run:
+
+npm run demo:flow
+
+
+Flow:
+
+Trade event
+→ Proof verification
+→ Risk evaluation
+→ AI bounded recommendation
+→ Policy decision
+→ Integrity verification
+→ Blockchain commitment
+
+
+### AI Security Boundary Demo
+
+Run:
+
+npm run demo:security
+
+
+Demonstrates:
+
+- AI cannot increase lending limits
+- deterministic policy overrides AI suggestions
+- unsafe recommendations fail closed
+- high-risk cases escalate to review
