@@ -58,3 +58,7 @@ export function routeReview(
     reason: "deterministic policy permits auto path and bounded underwriting raises no additional review signal",
   };
 }
+
+export function shouldHoldForReview(route: ReviewRoute): boolean {
+  return route === "AI_REVIEW_RECOMMENDED";
+}

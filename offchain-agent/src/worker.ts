@@ -1,4 +1,5 @@
 import "dotenv/config";
+import fs from "node:fs";
 import { Contract, ethers } from "ethers";
 import { chainInfo, proofProvider } from "@gluwa/usc-sdk";
 
@@ -6,7 +7,7 @@ import managerAbi from "../../contracts/abi/AttestGuardManager.json" with { type
 import tradeAbi from "../../contracts/abi/TradeConfirmation.json" with { type: "json" };
 import { evaluateAdvancePolicy } from "./policy.js";
 import { explainDecision } from "./explain.js";
-import { routeReview } from "./routing.js";
+import { routeReview, shouldHoldForReview } from "./routing.js";
 import { underwrite } from "./underwriter.js";
 import { hashUnderwritingDecision } from "./decision.js";
 import { loadVerifiedSupplierHistory } from "./history.js";
@@ -31,6 +32,7 @@ interface WorkerConfig {
   proofRetryMaxMs: number;
   eventRetryBaseMs: number;
   eventRetryMaxMs: number;
+  reviewQueuePath: string;
 }
 
 export interface DeliveryEvent {
@@ -77,9 +79,16 @@ function loadConfig(): WorkerConfig {
     proofRetryMaxMs: envPositiveInt("PROOF_RETRY_MAX_MS", 30000),
     eventRetryBaseMs: envPositiveInt("EVENT_RETRY_BASE_MS", 15000),
     eventRetryMaxMs: envPositiveInt("EVENT_RETRY_MAX_MS", 120000),
+    reviewQueuePath: process.env.AI_REVIEW_QUEUE_PATH ?? "./ai-review-queue.jsonl",
   };
 }
 
+function appendToReviewQueue(
+  path: string,
+  entry: { invoiceId: string; reason: string; decisionHash: string; queuedAt: string }
+): void {
+  fs.appendFileSync(path, JSON.stringify(entry) + "\n", "utf8");
+}
 export function exponentialBackoffMs(attempt: number, baseMs: number, maxMs: number): number {
   if (!Number.isInteger(attempt) || attempt < 0) throw new Error("attempt must be a non-negative integer");
   return Math.min(maxMs, baseMs * 2 ** attempt);
@@ -194,6 +203,16 @@ async function handleDeliveryConfirmed(
   const recordReceipt = await recordTx.wait();
   console.log(`[worker] recorded underwriting decision on-chain, tx hash: ${recordReceipt?.hash}`);
 
+  if (shouldHoldForReview(routing.route)) {
+    appendToReviewQueue(cfg.reviewQueuePath, {
+      invoiceId: event.invoiceId,
+      reason: routing.reason,
+      decisionHash,
+      queuedAt: new Date().toISOString(),
+    });
+    console.log(`[worker] AI review recommended for invoice ${event.invoiceId} — funding held.`);
+    return;
+  }
   const submitTx = await manager.fundAdvanceFromQuery(
     event.invoiceId,
     headerNumber,
