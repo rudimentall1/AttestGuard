@@ -9,6 +9,7 @@
     "test:contracts": "hardhat test",
     "test:agent": "node --test offchain-agent/dist/**/*.test.js",
     "build:agent": "tsc -p offchain-agent/tsconfig.json",
+    "demo:agent": "node offchain-agent/dist/offchain-agent/src/demo.js",
     "deploy:manager": "hardhat run deploy/deploy_manager.ts --network creditcoin_testnet",
     "worker": "node --loader ts-node/esm offchain-agent/src/worker.ts"
   },
