@@ -14,6 +14,7 @@ import { loadVerifiedSupplierHistory } from "./history.js";
 import { ensureUnderwritingDecisionRecorded } from "./underwriting-recording.js";
 import { appendUnderwritingAuditEvent } from "./audit-trail.js";
 import { writeUnderwritingReport } from "./report.js";
+import { applyAIBoundary } from "./ai-boundary.js";
 import { hashReport } from "./report-hash.js";
 import type { AdvanceRequest, UnderwritingEvidence } from "./types.js";
 
@@ -241,6 +242,19 @@ async function handleDeliveryConfirmed(
   );
 
   const routing = routeReview(request, decision, underwriting);
+
+  const aiRecommendation =
+    underwriting.riskTier === "D"
+      ? "REVIEW"
+      : "AUTO_PATH";
+
+  const boundedAI = applyAIBoundary(
+    routing.route === "ONCHAIN_GUARDIAN_REVIEW" ||
+    routing.route === "AI_REVIEW_RECOMMENDED"
+      ? "REVIEW"
+      : routing.route,
+    aiRecommendation
+  );
   console.log(`[worker] review route: ${routing.route} — ${routing.reason}`);
 
   appendUnderwritingAuditEvent(cfg.auditTrailPath, {
