@@ -1,5 +1,6 @@
 ﻿import type { AttestGuardProofBundle } from "./proof-bundle.js";
 import { hashProofBundle } from "./hash.js";
+import { canonicalProofPayload } from "./canonical.js";
 
 export function verifyProofBundle(
   bundle: AttestGuardProofBundle
@@ -49,18 +50,20 @@ export function verifyProofBundle(
     return false;
   }
 
-  const expectedHash = hashProofBundle({
-    invoiceId: bundle.invoiceId,
-    decisionHash: bundle.decision.hash,
-    evidenceHash: bundle.evidence.hash,
-    aiTraceHash: bundle.ai.traceHash,
-    reportHash: bundle.integrity.reportHash,
-    policyDecision: bundle.decision.policy,
-    policyReason: bundle.decision.reason,
-    aiRecommendation: bundle.ai.recommendation,
-    riskTier: bundle.evidence.riskTier,
-    timestamp: bundle.createdAt,
-  });
+  const expectedHash = hashProofBundle(
+    canonicalProofPayload({
+      invoiceId: bundle.invoiceId,
+      decisionHash: bundle.decision.hash,
+      evidenceHash: bundle.evidence.hash,
+      aiTraceHash: bundle.ai.traceHash,
+      reportHash: bundle.integrity.reportHash,
+      policyDecision: bundle.decision.policy,
+      policyReason: bundle.decision.reason,
+      aiRecommendation: bundle.ai.recommendation,
+      riskTier: bundle.evidence.riskTier,
+      timestamp: bundle.createdAt,
+    })
+  );
 
   if (bundle.proofHash !== expectedHash) {
     return false;
@@ -68,6 +71,8 @@ export function verifyProofBundle(
 
   return true;
 }
+
+
 
 
 

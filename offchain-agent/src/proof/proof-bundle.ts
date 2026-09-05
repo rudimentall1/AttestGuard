@@ -1,4 +1,5 @@
 ﻿import { hashProofBundle } from "./hash.js";
+import { canonicalProofPayload } from "./canonical.js";
 
 export interface ProofBundleInput {
   invoiceId: string;
@@ -67,20 +68,13 @@ export function createProofBundle(
       reportHash: input.reportHash,
     },
     createdAt: input.timestamp,
-    proofHash: hashProofBundle({
-      invoiceId: input.invoiceId,
-      decisionHash: input.decisionHash,
-      evidenceHash: input.evidenceHash,
-      aiTraceHash: input.aiTraceHash,
-      reportHash: input.reportHash,
-      policyDecision: input.policyDecision,
-      policyReason: input.policyReason,
-      aiRecommendation: input.aiRecommendation,
-      riskTier: input.riskTier,
-      timestamp: input.timestamp,
-    }),
+    proofHash: hashProofBundle(
+      canonicalProofPayload(input)
+    ),
   };
 }
+
+
 
 
 

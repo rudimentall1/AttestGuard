@@ -184,3 +184,39 @@ test("tampering proof schema metadata invalidates verification", () => {
     false
   );
 });
+
+test("canonical proof hash remains stable across equivalent payload generation", () => {
+  const bundle = createProofBundle({
+    invoiceId: "invoice-001",
+    decisionHash: "0xdecision",
+    evidenceHash: "0xevidence",
+    aiTraceHash: "0xai",
+    reportHash: "0xreport",
+    policyDecision: "AUTO_APPROVE",
+    policyReason: "trusted supplier",
+    aiRecommendation: "AUTO_PATH",
+    riskTier: "A",
+    timestamp: "2026-01-01T00:00:00.000Z",
+  });
+
+  const copy = {
+    ...bundle,
+    decision: {
+      ...bundle.decision,
+    },
+    ai: {
+      ...bundle.ai,
+    },
+    evidence: {
+      ...bundle.evidence,
+    },
+    integrity: {
+      ...bundle.integrity,
+    },
+  };
+
+  assert.equal(
+    verifyProofBundle(copy),
+    true
+  );
+});
