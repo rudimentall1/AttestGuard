@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { createProofBundle } from "./proof-bundle.js";
 import { verifyProofBundle } from "./verify.js";
+import { exportProofBundle } from "./export.js";
 
 test("valid proof bundle passes verification", () => {
   const bundle = createProofBundle({
@@ -217,6 +218,31 @@ test("canonical proof hash remains stable across equivalent payload generation",
 
   assert.equal(
     verifyProofBundle(copy),
+    true
+  );
+});
+
+
+test("exported proof bundle survives serialization round trip", () => {
+  const bundle = createProofBundle({
+    invoiceId: "invoice-001",
+    decisionHash: "0xdecision",
+    evidenceHash: "0xevidence",
+    aiTraceHash: "0xai",
+    reportHash: "0xreport",
+    policyDecision: "AUTO_APPROVE",
+    policyReason: "trusted supplier",
+    aiRecommendation: "AUTO_PATH",
+    riskTier: "A",
+    timestamp: "2026-01-01T00:00:00.000Z",
+  });
+
+  const exported = exportProofBundle(bundle);
+
+  const restored = JSON.parse(exported);
+
+  assert.equal(
+    verifyProofBundle(restored),
     true
   );
 });
