@@ -15,6 +15,8 @@ export interface ProofBundleInput {
 
 export interface AttestGuardProofBundle {
   version: "1.0";
+  schemaVersion: "1.0";
+  hashAlgorithm: "SHA256-CANONICAL";
   type: "UNDERWRITING_PROOF";
   invoiceId: string;
   decision: {
@@ -43,6 +45,8 @@ export function createProofBundle(
 ): AttestGuardProofBundle {
   return {
     version: "1.0",
+    schemaVersion: "1.0",
+    hashAlgorithm: "SHA256-CANONICAL",
     type: "UNDERWRITING_PROOF",
     invoiceId: input.invoiceId,
     decision: {
@@ -77,6 +81,14 @@ export function createProofBundle(
     }),
   };
 }
+
+
+
+
+
+
+
+
 
 
 

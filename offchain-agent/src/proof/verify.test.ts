@@ -130,6 +130,8 @@ test("proof hash is stable regardless of object key order", () => {
 
   const second = {
     version: "1.0" as const,
+    schemaVersion: "1.0" as const,
+    hashAlgorithm: "SHA256-CANONICAL" as const,
     type: "UNDERWRITING_PROOF" as const,
     invoiceId: "invoice-001",
     decision: {
@@ -158,3 +160,5 @@ test("proof hash is stable regardless of object key order", () => {
     true
   );
 });
+
+

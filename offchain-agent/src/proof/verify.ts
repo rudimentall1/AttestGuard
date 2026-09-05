@@ -9,6 +9,14 @@ export function verifyProofBundle(
     return false;
   }
 
+  if (bundle.schemaVersion !== "1.0") {
+    return false;
+  }
+
+  if (bundle.hashAlgorithm !== "SHA256-CANONICAL") {
+    return false;
+  }
+
   if (bundle.type !== "UNDERWRITING_PROOF") {
     return false;
   }
@@ -60,5 +68,6 @@ export function verifyProofBundle(
 
   return true;
 }
+
 
 
