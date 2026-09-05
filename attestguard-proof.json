@@ -1,0 +1,37 @@
+{
+  "protocol": "ATTESTGUARD",
+  "version": "1.0",
+  "issuer": "attestguard-demo",
+  "createdAt": "2026-09-05T06:11:53.318Z",
+  "proof": {
+    "version": "1.0",
+    "schemaVersion": "1.0",
+    "hashAlgorithm": "SHA256-CANONICAL",
+    "type": "UNDERWRITING_PROOF",
+    "invoiceId": "demo-invoice-001",
+    "decision": {
+      "hash": "0xdecision-demo",
+      "policy": "AUTO_APPROVE",
+      "reason": "trusted supplier"
+    },
+    "ai": {
+      "recommendation": "AUTO_PATH",
+      "traceHash": "0xai-demo",
+      "authority": "ADVISORY_ONLY"
+    },
+    "evidence": {
+      "hash": "0xevidence-demo",
+      "riskTier": "A"
+    },
+    "integrity": {
+      "reportHash": "0xreport-demo"
+    },
+    "createdAt": "2026-09-05T06:11:53.315Z",
+    "proofHash": "6dfe32a50cc57979ff15a932feb8bc147bccc5f93d92e139c9df8d346c02fca1"
+  },
+  "signature": {
+    "algorithm": "HASH_SIGNATURE",
+    "signer": "attestguard-demo",
+    "value": "0af56c80bdff25b9789061c0c3f4cbd16507ad6a8672eb2e26dbd69aa2abd9a9"
+  }
+}

@@ -8,8 +8,11 @@ export function verifyAttestGuardJson(
 
   try {
 
+    const cleanJson =
+      json.replace(/^\uFEFF/, "");
+
     const envelope =
-      JSON.parse(json);
+      JSON.parse(cleanJson);
 
     return verifyAttestGuardEnvelope(
       envelope
@@ -27,3 +30,4 @@ export function verifyAttestGuardJson(
 
   }
 }
+
