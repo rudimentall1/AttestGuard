@@ -6,6 +6,12 @@ import { verifyProofBundle } from "./proof/proof-verifier.js";
 
 const reportPath = "artifacts/underwriting-report.json";
 
+if (!fs.existsSync(reportPath)) {
+  console.log("Report not found. Run:");
+  console.log("npm run report");
+  process.exit(1);
+}
+
 const report = fs.readFileSync(reportPath, "utf8");
 
 const reportHash =
