@@ -7,3 +7,5 @@ cache/
 *.log
 
 typechain-types/
+
+AttestGuard/

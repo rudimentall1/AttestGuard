@@ -216,7 +216,7 @@ async function handleDeliveryConfirmed(
   console.log(
     `[worker] verified relationship history: prior advances=${history.priorAdvancesWithThisBuyer} prior repayments=${history.priorRepaymentsWithThisBuyer} prior defaults=${history.priorDefaultsWithThisBuyer}`
   );
-  console.log(`[worker] policy pre-check: ${decision.verdict} вЂ” ${decision.reason}`);
+  console.log(`[worker] policy pre-check: ${decision.verdict} — ${decision.reason}`);
   console.log(`[worker] risk note: ${note}`);
 
   if (decision.verdict === "BLOCK") {
@@ -262,7 +262,6 @@ async function handleDeliveryConfirmed(
     aiRecommendation
   );
 
-
   const aiTraceHash = hashAuditTrace({
     decisionHash,
     aiApplied: boundedAI.aiApplied,
@@ -272,7 +271,7 @@ async function handleDeliveryConfirmed(
     reasonCodes: [routing.reason],
   });
 
-  console.log(`[worker] review route: ${routing.route} вЂ” ${routing.reason}`);
+  console.log(`[worker] review route: ${routing.route} — ${routing.reason}`);
 
   appendUnderwritingAuditEvent(cfg.auditTrailPath, {
     invoiceId: event.invoiceId,
@@ -280,7 +279,7 @@ async function handleDeliveryConfirmed(
     aiTraceHash,
     policyDecision: decision.verdict === "AUTO_APPROVE" ? "AUTO" : decision.verdict,
     timestamp: new Date().toISOString(),
-recommendation:
+    recommendation:
       routing.route === "AUTO_PATH"
         ? "APPROVE"
         : routing.route === "BLOCKED_BY_POLICY"
@@ -303,7 +302,6 @@ recommendation:
     aiReason: boundedAI.reason,
     aiFinalRoute: boundedAI.route,
     reasonCodes: [routing.reason],
-    
   });
   const report = {
     reportVersion: "1.0" as const,
@@ -323,8 +321,7 @@ recommendation:
             ? "BLOCK"
             : "REVIEW") as "APPROVE" | "BLOCK" | "REVIEW",
       riskTier: underwriting.riskTier,
-    timestamp: new Date().toISOString(),
-confidence: underwriting.confidenceBps / 10000,
+      confidence: underwriting.confidenceBps / 10000,
     },
 
     policy: {
@@ -372,7 +369,7 @@ confidence: underwriting.confidenceBps / 10000,
     aiRecommendation: boundedAI.route,
     riskTier: underwriting.riskTier,
     timestamp: new Date().toISOString(),
-});
+  });
 
   if (!verifyProofBundle(proofBundle)) {
     throw new Error("proof bundle verification failed");
@@ -402,7 +399,7 @@ confidence: underwriting.confidenceBps / 10000,
       decisionHash,
       queuedAt: new Date().toISOString(),
     });
-    console.log(`[worker] AI review recommended for invoice ${event.invoiceId} вЂ” funding held.`);
+    console.log(`[worker] AI review recommended for invoice ${event.invoiceId} — funding held.`);
     return;
   }
   const submitTx = await manager.fundAdvanceFromQuery(
@@ -502,14 +499,3 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   });
 }
-
-
-
-
-
-
-
-
-
-
-

@@ -1,46 +1,69 @@
-﻿console.log("");
+﻿import { evaluateAdvancePolicy } from "./policy.js";
+import { underwrite } from "./underwriter.js";
+import { routeReview, shouldHoldForReview } from "./routing.js";
+import type { AdvanceRequest, SupplierHistory, UnderwritingEvidence } from "./types.js";
 
-console.log("================================================");
-console.log("       ATTESTGUARD AI SECURITY DEMO");
-console.log("================================================");
+const request: AdvanceRequest = {
+  invoiceId: "0x" + "46".repeat(32),
+  supplier: "0x9999999999999999999999999999999999999c",
+  buyer: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad",
+  invoiceAmount: 50_000_000_000n,
+  requestedAdvanceAmount: 45_000_000_000n,
+};
 
-console.log("");
+const history: SupplierHistory = {
+  supplier: request.supplier,
+  autoApproveCap: 60_000_000_000n,
+  fundedToday: 0n,
+  perSupplierDailyCap: 100_000_000_000n,
+  priorAdvancesWithThisBuyer: 2,
+  priorRepaymentsWithThisBuyer: 1,
+  priorDefaultsWithThisBuyer: 1,
+  historyComplete: true,
+};
 
-console.log("Scenario:");
-console.log("Invoice amount: $50,000");
-console.log("Supplier risk tier: A");
-console.log("Historical repayments: VERIFIED");
+async function main() {
+  console.log("");
+  console.log("================================================");
+  console.log("       ATTESTGUARD AI SECURITY DEMO");
+  console.log("================================================");
+  console.log("");
 
-console.log("");
+  console.log("Scenario (synthetic):");
+  console.log(`Invoice amount: ${Number(request.invoiceAmount) / 1e6} USDC`);
+  console.log(`Requested advance: ${Number(request.requestedAdvanceAmount) / 1e6} USDC (within supplier's cap)`);
+  console.log("Buyer history: 1 prior default on record");
+  console.log("");
 
-console.log("AI Recommendation:");
-console.log("APPROVE $100,000");
-console.log("Confidence: 0.99");
+  const decision = evaluateAdvancePolicy(request, history);
+  console.log("Deterministic Policy Engine:");
+  console.log(`Verdict: ${decision.verdict}`);
+  console.log(`Reason: ${decision.reason}`);
+  console.log("");
 
-console.log("");
+  const evidence: UnderwritingEvidence = { request, history, deliveryVerified: true, proofVerified: true, invoiceAgeSeconds: 900 };
+  const underwriting = await underwrite(evidence);
+  console.log("Bounded AI Underwriting:");
+  console.log(`Risk tier: ${underwriting.riskTier}`);
+  console.log(`Recommended advance: ${Number(underwriting.recommendedAdvance) / 1e6} USDC`);
+  console.log("");
 
-console.log("Deterministic Policy Engine:");
-console.log("Maximum allowed advance: $40,000");
-console.log("Risk envelope exceeded");
+  const routing = routeReview(request, decision, underwriting);
+  console.log("AI Boundary:");
+  console.log(decision.verdict === "BLOCK" ? "BLOCKED - Deterministic BLOCK - no AI recommendation can override this" : `Route: ${routing.route}`);
+  console.log("");
 
-console.log("");
+  console.log("Final Decision:");
+  console.log(decision.verdict === "BLOCK" ? "BLOCKED - fundAdvanceFromQuery is never called" : routing.route);
+  console.log("");
+  console.log("Security guarantees demonstrated above:");
+  console.log(`- AI recommended tier ${underwriting.riskTier}; policy verdict was still ${decision.verdict}`);
+  console.log(`- funding hold flag: ${shouldHoldForReview(routing.route)}`);
+  console.log("");
+  console.log("================================================");
+}
 
-console.log("AI Boundary:");
-
-console.log("❌ AI override rejected");
-
-console.log("");
-
-console.log("Final Decision:");
-console.log("REVIEW_REQUIRED");
-
-console.log("");
-
-console.log("Security Guarantees:");
-console.log("- AI cannot increase lending limits");
-console.log("- Deterministic rules have priority");
-console.log("- Unsafe recommendations fail closed");
-
-console.log("");
-
-console.log("================================================");
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
