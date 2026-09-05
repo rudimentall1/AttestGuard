@@ -1,4 +1,24 @@
-﻿import fs from "node:fs";
+import fs from "node:fs";
+import crypto from "node:crypto";
+
+const evidence = {
+  invoiceAmount: 50000,
+  supplierRiskTier: "A",
+  history: "VERIFIED"
+};
+
+const aiTrace = {
+  recommendation: "APPROVE",
+  requestedAdvance: 100000,
+  confidence: 0.99
+};
+
+function sha256(value: unknown): string {
+  return "0x" + crypto
+    .createHash("sha256")
+    .update(JSON.stringify(value))
+    .digest("hex");
+}
 
 const report = {
   protocol: "AttestGuard",
@@ -8,17 +28,9 @@ const report = {
     reason: "AI recommendation exceeded deterministic policy envelope"
   },
 
-  trade: {
-    invoiceAmount: 50000,
-    supplierRiskTier: "A",
-    history: "VERIFIED"
-  },
+  trade: evidence,
 
-  aiAgent: {
-    recommendation: "APPROVE",
-    requestedAdvance: 100000,
-    confidence: 0.99
-  },
+  aiAgent: aiTrace,
 
   policyEngine: {
     maximumAdvance: 40000,
@@ -27,17 +39,20 @@ const report = {
   },
 
   integrity: {
-    evidenceHash: "0xevidence123456789",
-    aiTraceHash: "0xaitrace123456789",
-    reportVerified: true
+    evidenceHash: sha256(evidence),
+    aiTraceHash: sha256(aiTrace),
+    reportVerified: false,
+    verificationNote: "Hashes generated. Signature verification and chain commitment require the full proof pipeline."
   },
 
   blockchain: {
-    commitmentStatus: "READY"
+    commitmentStatus: "NOT_SUBMITTED"
   },
 
   timestamp: new Date().toISOString()
 };
+
+fs.mkdirSync("artifacts", { recursive: true });
 
 fs.writeFileSync(
   "artifacts/underwriting-report.json",
@@ -45,5 +60,5 @@ fs.writeFileSync(
 );
 
 console.log("✔ underwriting-report.json generated");
-console.log("✔ integrity verified");
-console.log("✔ blockchain commitment ready");
+console.log("✔ evidence and AI trace hashes generated");
+console.log("⚠ signature verification and blockchain commitment require live pipeline");
