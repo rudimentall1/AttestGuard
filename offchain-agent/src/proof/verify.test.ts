@@ -162,3 +162,25 @@ test("proof hash is stable regardless of object key order", () => {
 });
 
 
+
+test("tampering proof schema metadata invalidates verification", () => {
+  const bundle = createProofBundle({
+    invoiceId: "invoice-001",
+    decisionHash: "0xdecision",
+    evidenceHash: "0xevidence",
+    aiTraceHash: "0xai",
+    reportHash: "0xreport",
+    policyDecision: "AUTO_APPROVE",
+    policyReason: "trusted supplier",
+    aiRecommendation: "AUTO_PATH",
+    riskTier: "A",
+    timestamp: "2026-01-01T00:00:00.000Z",
+  });
+
+  bundle.hashAlgorithm = "SHA1" as never;
+
+  assert.equal(
+    verifyProofBundle(bundle),
+    false
+  );
+});
