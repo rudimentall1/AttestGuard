@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import { createProofBundle } from "./proof-bundle.js";
 import { verifyProofBundle } from "./verify.js";
+import { createEnvelope } from "./envelope-builder.js";
+import { verifyEnvelope } from "./envelope-verify.js";
 import { exportProofBundle } from "./export.js";
 import { importProofBundle } from "./import.js";
 
@@ -272,3 +274,86 @@ test("exported proof bundle can be imported and verified", () => {
     true
   );
 });
+
+
+test("valid envelope passes verification", () => {
+  const bundle = createProofBundle({
+    invoiceId: "invoice-envelope-001",
+    decisionHash: "0xdecision",
+    evidenceHash: "0xevidence",
+    aiTraceHash: "0xai",
+    reportHash: "0xreport",
+    policyDecision: "AUTO_APPROVE",
+    policyReason: "trusted supplier",
+    aiRecommendation: "AUTO_PATH",
+    riskTier: "A",
+    timestamp: "2026-01-01T00:00:00.000Z",
+  });
+
+  const envelope = createEnvelope(
+    bundle,
+    "attestguard-agent"
+  );
+
+  assert.equal(
+    verifyEnvelope(envelope),
+    true
+  );
+});
+
+
+test("modified proof inside envelope fails verification", () => {
+  const bundle = createProofBundle({
+    invoiceId: "invoice-envelope-002",
+    decisionHash: "0xdecision",
+    evidenceHash: "0xevidence",
+    aiTraceHash: "0xai",
+    reportHash: "0xreport",
+    policyDecision: "AUTO_APPROVE",
+    policyReason: "trusted supplier",
+    aiRecommendation: "AUTO_PATH",
+    riskTier: "A",
+    timestamp: "2026-01-01T00:00:00.000Z",
+  });
+
+  const envelope = createEnvelope(
+    bundle,
+    "attestguard-agent"
+  );
+
+  envelope.proof.proofHash = "tampered";
+
+  assert.equal(
+    verifyEnvelope(envelope),
+    false
+  );
+});
+
+
+test("wrong envelope protocol fails verification", () => {
+  const bundle = createProofBundle({
+    invoiceId: "invoice-envelope-003",
+    decisionHash: "0xdecision",
+    evidenceHash: "0xevidence",
+    aiTraceHash: "0xai",
+    reportHash: "0xreport",
+    policyDecision: "AUTO_APPROVE",
+    policyReason: "trusted supplier",
+    aiRecommendation: "AUTO_PATH",
+    riskTier: "A",
+    timestamp: "2026-01-01T00:00:00.000Z",
+  });
+
+  const envelope = createEnvelope(
+    bundle,
+    "attestguard-agent"
+  );
+
+  envelope.protocol = "OTHER" as any;
+
+  assert.equal(
+    verifyEnvelope(envelope),
+    false
+  );
+});
+
