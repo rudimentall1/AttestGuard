@@ -1,4 +1,6 @@
-﻿export interface ProofBundleInput {
+﻿import { hashProofBundle } from "./hash.js";
+
+export interface ProofBundleInput {
   invoiceId: string;
   decisionHash: string;
   evidenceHash?: string;
@@ -33,6 +35,7 @@ export interface AttestGuardProofBundle {
     reportHash?: string;
   };
   createdAt: string;
+  proofHash: string;
 }
 
 export function createProofBundle(
@@ -60,6 +63,26 @@ export function createProofBundle(
       reportHash: input.reportHash,
     },
     createdAt: input.timestamp,
+    proofHash: hashProofBundle({
+      invoiceId: input.invoiceId,
+      decisionHash: input.decisionHash,
+      evidenceHash: input.evidenceHash,
+      aiTraceHash: input.aiTraceHash,
+      reportHash: input.reportHash,
+      policyDecision: input.policyDecision,
+      policyReason: input.policyReason,
+      aiRecommendation: input.aiRecommendation,
+      riskTier: input.riskTier,
+      timestamp: input.timestamp,
+    }),
   };
 }
+
+
+
+
+
+
+
+
 
