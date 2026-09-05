@@ -68,3 +68,25 @@ test("tampered proof payload fails proofHash verification", () => {
     false
   );
 });
+
+test("tampered proof hash fails verification", () => {
+  const bundle = createProofBundle({
+    invoiceId: "invoice-001",
+    decisionHash: "0xdecision",
+    evidenceHash: "0xevidence",
+    aiTraceHash: "0xai",
+    reportHash: "0xreport",
+    policyDecision: "AUTO_APPROVE",
+    policyReason: "trusted supplier",
+    aiRecommendation: "AUTO_PATH",
+    riskTier: "A",
+    timestamp: "2026-01-01T00:00:00.000Z",
+  });
+
+  bundle.proofHash = "fake-hash";
+
+  assert.equal(
+    verifyProofBundle(bundle),
+    false
+  );
+});
