@@ -113,3 +113,48 @@ test("tampering proof data invalidates proof hash", () => {
   );
 });
 
+
+test("proof hash is stable regardless of object key order", () => {
+  const first = createProofBundle({
+    invoiceId: "invoice-001",
+    decisionHash: "0xdecision",
+    evidenceHash: "0xevidence",
+    aiTraceHash: "0xai",
+    reportHash: "0xreport",
+    policyDecision: "AUTO_APPROVE",
+    policyReason: "trusted supplier",
+    aiRecommendation: "AUTO_PATH",
+    riskTier: "A",
+    timestamp: "2026-01-01T00:00:00.000Z",
+  });
+
+  const second = {
+    version: "1.0" as const,
+    type: "UNDERWRITING_PROOF" as const,
+    invoiceId: "invoice-001",
+    decision: {
+      reason: "trusted supplier",
+      policy: "AUTO_APPROVE",
+      hash: "0xdecision",
+    },
+    ai: {
+      authority: "ADVISORY_ONLY" as const,
+      traceHash: "0xai",
+      recommendation: "AUTO_PATH",
+    },
+    evidence: {
+      riskTier: "A",
+      hash: "0xevidence",
+    },
+    integrity: {
+      reportHash: "0xreport",
+    },
+    createdAt: "2026-01-01T00:00:00.000Z",
+    proofHash: first.proofHash,
+  };
+
+  assert.equal(
+    verifyProofBundle(second),
+    true
+  );
+});
