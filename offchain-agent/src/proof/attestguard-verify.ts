@@ -11,6 +11,29 @@ export interface VerificationResult {
 }
 
 
+function mapVerificationError(
+  error: unknown
+): string {
+
+  if (!(error instanceof Error)) {
+    return "UNKNOWN_ERROR";
+  }
+
+
+  switch (error.message) {
+
+    case "INVALID_ENVELOPE":
+      return "PROOF_INTEGRITY_FAILED";
+
+    case "INVALID_SIGNATURE":
+      return "SIGNATURE_VERIFICATION_FAILED";
+
+    default:
+      return error.message;
+  }
+}
+
+
 export function verifyAttestGuardEnvelope(
   envelope: AttestGuardEnvelope
 ): VerificationResult {
@@ -27,14 +50,12 @@ export function verifyAttestGuardEnvelope(
       proofHash: verified.proof.proofHash
     };
 
+
   } catch (error) {
 
     return {
       valid: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "UNKNOWN_ERROR"
+      error: mapVerificationError(error)
     };
 
   }
