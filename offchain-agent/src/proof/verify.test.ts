@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { createProofBundle } from "./proof-bundle.js";
 import { verifyProofBundle } from "./verify.js";
 import { exportProofBundle } from "./export.js";
+import { importProofBundle } from "./import.js";
 
 test("valid proof bundle passes verification", () => {
   const bundle = createProofBundle({
@@ -243,6 +244,31 @@ test("exported proof bundle survives serialization round trip", () => {
 
   assert.equal(
     verifyProofBundle(restored),
+    true
+  );
+});
+
+
+test("exported proof bundle can be imported and verified", () => {
+  const bundle = createProofBundle({
+    invoiceId: "invoice-001",
+    decisionHash: "0xdecision",
+    evidenceHash: "0xevidence",
+    aiTraceHash: "0xai",
+    reportHash: "0xreport",
+    policyDecision: "AUTO_APPROVE",
+    policyReason: "trusted supplier",
+    aiRecommendation: "AUTO_PATH",
+    riskTier: "A",
+    timestamp: "2026-01-01T00:00:00.000Z",
+  });
+
+  const exported = exportProofBundle(bundle);
+
+  const imported = importProofBundle(exported);
+
+  assert.equal(
+    verifyProofBundle(imported),
     true
   );
 });
