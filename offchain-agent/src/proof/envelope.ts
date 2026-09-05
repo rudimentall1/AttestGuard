@@ -1,4 +1,4 @@
-import type { AttestGuardProofBundle } from "./proof-bundle.js";
+﻿import type { AttestGuardProofBundle } from "./proof-bundle.js";
 
 export interface AttestGuardEnvelope {
   protocol: "ATTESTGUARD";
@@ -11,7 +11,7 @@ export interface AttestGuardEnvelope {
   proof: AttestGuardProofBundle;
 
   signature: {
-    algorithm: "EIP712" | "NONE";
+    algorithm: string;
     signer: string;
     value: string;
   };

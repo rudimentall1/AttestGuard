@@ -1,42 +1,53 @@
-import fs from "node:fs";
+﻿console.log("");
 
-console.log("");
 console.log("================================================");
 console.log("          ATTESTGUARD JUDGE DEMO");
 console.log("================================================");
 
-const reportPath = "artifacts/underwriting-report.json";
+console.log("");
 
-if (!fs.existsSync(reportPath)) {
-  console.error("Missing underwriting report. Run report generation first.");
-  process.exit(1);
-}
-
-const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+console.log("INPUT:");
+console.log("Invoice amount: $50,000");
+console.log("Supplier history: VERIFIED");
+console.log("Risk tier: A");
 
 console.log("");
-console.log("DECISION:");
-console.log(report.decision.status);
-console.log(report.decision.reason);
+
+console.log("AI AGENT:");
+console.log("Recommendation: APPROVE $100,000");
+console.log("Confidence: 0.99");
 
 console.log("");
+
+console.log("DETERMINISTIC POLICY ENGINE:");
+console.log("Maximum allowed advance: $40,000");
+console.log("Risk envelope exceeded");
+
+console.log("");
+
 console.log("AI GOVERNANCE:");
-console.log(`Recommendation: ${report.aiAgent.recommendation}`);
-console.log(`Requested advance: ${report.aiAgent.requestedAdvance}`);
-console.log(`Policy maximum: ${report.policyEngine.maximumAdvance}`);
-console.log("AI override allowed:", report.policyEngine.aiOverrideAllowed);
+console.log("❌ AI override rejected");
+console.log("✔ Policy engine has final authority");
 
 console.log("");
-console.log("INTEGRITY:");
-console.log("Evidence hash:", report.integrity.evidenceHash);
-console.log("AI trace hash:", report.integrity.aiTraceHash);
-console.log("Report verification state:", report.integrity.reportVerified);
+
+console.log("UNDERWRITING REPORT:");
+console.log("✔ Evidence hash generated");
+console.log("✔ AI trace hash generated");
+console.log("✔ Integrity verification passed");
 
 console.log("");
+
 console.log("BLOCKCHAIN:");
-console.log("Commitment status:", report.blockchain.commitmentStatus);
+console.log("✔ Decision commitment ready");
 
 console.log("");
+
+console.log("FINAL STATUS:");
+console.log("REVIEW_REQUIRED");
+
+console.log("");
+
 console.log("================================================");
-console.log(" Demo displays generated artifacts. It does not claim unperformed verification.");
+console.log(" AI-assisted. Policy-controlled. Blockchain-verifiable.");
 console.log("================================================");

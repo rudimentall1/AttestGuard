@@ -1,30 +1,27 @@
-import { verifyTypedData } from "ethers";
-import type { AttestGuardEnvelope } from "./envelope.js";
-import { ENVELOPE_DOMAIN, ENVELOPE_TYPES } from "./envelope-sign.js";
+﻿import type { AttestGuardEnvelope } from "./envelope.js";
+import { hashEnvelope } from "./envelope-hash.js";
 
 export function verifyEnvelopeSignature(
   envelope: AttestGuardEnvelope
 ): boolean {
-  if (envelope.signature.algorithm !== "EIP712") {
+
+  if (
+    envelope.signature.algorithm !== "HASH_SIGNATURE"
+  ) {
     return false;
   }
 
-  try {
-    const recovered = verifyTypedData(
-      ENVELOPE_DOMAIN,
-      ENVELOPE_TYPES,
-      {
-        protocol: envelope.protocol,
-        version: envelope.version,
-        issuer: envelope.issuer,
-        createdAt: envelope.createdAt,
-        proofHash: envelope.proof.reportHash,
-      },
-      envelope.signature.value
-    );
+  const expected =
+    hashEnvelope({
+      ...envelope,
+      signature: {
+        algorithm: "NONE",
+        signer: envelope.signature.signer,
+        value: ""
+      }
+    });
 
-    return recovered.toLowerCase() === envelope.signature.signer.toLowerCase();
-  } catch {
-    return false;
-  }
+  return (
+    envelope.signature.value === expected
+  );
 }
