@@ -1,4 +1,4 @@
-import { expect } from "chai";
+﻿import { expect } from "chai";
 import { ethers } from "hardhat";
 
 describe("AttestGuardManager", function () {
@@ -180,6 +180,43 @@ describe("AttestGuardManager", function () {
       .to.be.reverted;
   });
 
+  it("lets a separately-set operator record a decision without holding owner privileges", async function () {
+    const { manager, supplier, buyer, other } = await deployFixture();
+    const invoiceId = await registerDefaultAdvance(manager, supplier, buyer, "operator-decision");
+
+    await expect(manager.setOperator(other.address))
+      .to.emit(manager, "OperatorUpdated")
+      .withArgs(other.address);
+
+    await expect(manager.connect(other).recordUnderwritingDecision(invoiceId, ethers.id("decision-op")))
+      .to.emit(manager, "UnderwritingDecisionRecorded")
+      .withArgs(invoiceId, ethers.id("decision-op"));
+
+    // The operator still cannot do anything an owner-only function guards --
+    // e.g. withdrawing liquidity -- confirming this is a narrow delegation,
+    // not a second owner.
+    await expect(manager.connect(other).withdrawLiquidity(1))
+      .to.be.reverted;
+  });
+
+  it("rejects recording from an account that is neither owner nor the current operator", async function () {
+    const { manager, supplier, buyer, other } = await deployFixture();
+    const invoiceId = await registerDefaultAdvance(manager, supplier, buyer, "operator-decision-2");
+
+    // other is not the operator (default operator is the deployer) and not
+    // the owner, so this must revert.
+    await expect(
+      manager.connect(other).recordUnderwritingDecision(invoiceId, ethers.id("decision-op-2"))
+    ).to.be.revertedWithCustomError(manager, "NotOperator");
+  });
+
+  it("prevents a non-owner from changing the operator", async function () {
+    const { manager, other } = await deployFixture();
+    await expect(
+      manager.connect(other).setOperator(other.address)
+    ).to.be.revertedWithCustomError(manager, "OwnableUnauthorizedAccount");
+  });
+
   it("rejects underwriting decision recording for an unknown invoice", async function () {
     const { manager } = await deployFixture();
     await expect(manager.recordUnderwritingDecision(ethers.id("unknown"), ethers.id("decision")))
@@ -228,5 +265,37 @@ describe("AttestGuardManager", function () {
   it("prevents a non-owner from pausing or unpausing", async function () {
     const { manager, other } = await deployFixture();
     await expect(manager.connect(other).pause()).to.be.reverted;
+  });
+
+  it("owner can cancel a stuck Registered advance", async function () {
+    const { manager, supplier, buyer } = await deployFixture();
+    const invoiceId = await registerDefaultAdvance(manager, supplier, buyer, "cancel-me");
+
+    const [owner] = await ethers.getSigners();
+    await expect(manager.cancelAdvance(invoiceId, "source-chain amount will never match"))
+      .to.emit(manager, "AdvanceCancelled")
+      .withArgs(invoiceId, owner.address, "source-chain amount will never match");
+
+    const advance = await manager.advances(invoiceId);
+    expect(advance.status).to.equal(7); // Cancelled
+  });
+
+  it("prevents a non-owner from cancelling an advance", async function () {
+    const { manager, supplier, buyer, other } = await deployFixture();
+    const invoiceId = await registerDefaultAdvance(manager, supplier, buyer, "cancel-me-2");
+
+    await expect(
+      manager.connect(other).cancelAdvance(invoiceId, "not my call")
+    ).to.be.revertedWithCustomError(manager, "OwnableUnauthorizedAccount");
+  });
+
+  it("cannot cancel an advance that already left Registered status", async function () {
+    const { manager, supplier, buyer } = await deployFixture();
+    const invoiceId = await registerDefaultAdvance(manager, supplier, buyer, "cancel-me-3");
+
+    await manager.cancelAdvance(invoiceId, "first cancel");
+    await expect(
+      manager.cancelAdvance(invoiceId, "second cancel should fail")
+    ).to.be.revertedWithCustomError(manager, "AdvanceNotPending");
   });
 });

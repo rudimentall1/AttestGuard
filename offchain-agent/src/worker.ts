@@ -216,7 +216,7 @@ async function handleDeliveryConfirmed(
   console.log(
     `[worker] verified relationship history: prior advances=${history.priorAdvancesWithThisBuyer} prior repayments=${history.priorRepaymentsWithThisBuyer} prior defaults=${history.priorDefaultsWithThisBuyer}`
   );
-  console.log(`[worker] policy pre-check: ${decision.verdict} — ${decision.reason}`);
+  console.log(`[worker] policy pre-check: ${decision.verdict} - ${decision.reason}`);
   console.log(`[worker] risk note: ${note}`);
 
   if (decision.verdict === "BLOCK") {
@@ -249,10 +249,12 @@ async function handleDeliveryConfirmed(
 
   const routing = routeReview(request, decision, underwriting);
 
-  const aiRecommendation =
-    underwriting.riskTier === "D"
-      ? "REVIEW"
-      : "AUTO_PATH";
+  // Derived from the same routing.route the real funding gate uses
+  // (shouldHoldForReview), not a separately re-derived riskTier check --
+  // those two used to disagree (riskTier === "D" vs riskFlags.length > 0),
+  // which could leave the audit trail's aiFinalRoute inconsistent with
+  // what actually happened.
+  const aiRecommendation = routing.route === "AI_REVIEW_RECOMMENDED" ? "REVIEW" : "AUTO_PATH";
 
   const boundedAI = applyAIBoundary(
     routing.route === "ONCHAIN_GUARDIAN_REVIEW" ||
@@ -271,7 +273,7 @@ async function handleDeliveryConfirmed(
     reasonCodes: [routing.reason],
   });
 
-  console.log(`[worker] review route: ${routing.route} — ${routing.reason}`);
+  console.log(`[worker] review route: ${routing.route} - ${routing.reason}`);
 
   appendUnderwritingAuditEvent(cfg.auditTrailPath, {
     invoiceId: event.invoiceId,
@@ -399,7 +401,7 @@ async function handleDeliveryConfirmed(
       decisionHash,
       queuedAt: new Date().toISOString(),
     });
-    console.log(`[worker] AI review recommended for invoice ${event.invoiceId} — funding held.`);
+    console.log(`[worker] AI review recommended for invoice ${event.invoiceId} - funding held.`);
     return;
   }
   const submitTx = await manager.fundAdvanceFromQuery(

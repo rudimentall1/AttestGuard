@@ -39,6 +39,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     mapping(address => uint256) public suppliersFundedToday;
     mapping(address => uint256) public suppliersDayBucket;
     address public guardianConfirmer;
+    address public operator;
 
     uint256 public constant DEFAULT_AUTO_APPROVE_CAP = 500 ether;
     uint256 public constant AUTO_APPROVE_CAP_GROWTH_PER_REPAYMENT = 250 ether;
@@ -50,9 +51,11 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     event AdvanceFlaggedForConfirmation(bytes32 indexed invoiceId, address indexed supplier, uint256 amount, string reason);
     event AdvanceConfirmed(bytes32 indexed invoiceId, address indexed guardian);
     event AdvanceRejected(bytes32 indexed invoiceId, address indexed rejectedBy, string reason);
+    event AdvanceCancelled(bytes32 indexed invoiceId, address indexed cancelledBy, string reason);
     event RepaymentAcknowledged(bytes32 indexed invoiceId, address indexed supplier, uint256 newAutoApproveCap);
     event AutoApproveCapUpdated(address indexed supplier, uint256 newCap);
     event GuardianConfirmerUpdated(address indexed newGuardian);
+    event OperatorUpdated(address indexed newOperator);
     event LiquidityWithdrawn(address indexed to, uint256 amount);
     event UnderwritingDecisionRecorded(bytes32 indexed invoiceId, bytes32 indexed decisionHash);
 
@@ -66,6 +69,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     error UnknownAdvance();
     error AdvanceNotPending();
     error NotGuardianConfirmer();
+    error NotOperator();
     error AboveGlobalMax();
 
     constructor(address advanceToken_, uint64 sourceChainKey_, uint256 globalMaxAdvance_, uint256 perSupplierDailyCap_)
@@ -77,6 +81,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
         globalMaxAdvance = globalMaxAdvance_;
         perSupplierDailyCap = perSupplierDailyCap_;
         guardianConfirmer = msg.sender;
+        operator = msg.sender;
     }
 
     function registerSourceConfirmationContract(address sourceContract) external onlyOwner {
@@ -87,6 +92,19 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     function setGuardianConfirmer(address guardian) external onlyOwner {
         guardianConfirmer = guardian;
         emit GuardianConfirmerUpdated(guardian);
+    }
+
+    /// @notice Lets the owner delegate recordUnderwritingDecision to a
+    /// separate, lower-privilege hot key (e.g. the always-online worker
+    /// process's own key), instead of that process having to hold the
+    /// full owner key (which can withdrawLiquidity, pause, register
+    /// advances, etc.). Defaults to the deployer for backward
+    /// compatibility if never called. Does not change who can call
+    /// fundAdvanceFromQuery / acknowledgeRepaymentFromQuery / cancelAdvance
+    /// / any other function -- only recordUnderwritingDecision.
+    function setOperator(address newOperator) external onlyOwner {
+        operator = newOperator;
+        emit OperatorUpdated(newOperator);
     }
 
     function setGlobalMaxAdvance(uint256 amount) external onlyOwner { globalMaxAdvance = amount; }
@@ -138,7 +156,8 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     /// This is an auditable one-time commitment. The contract does not claim to
     /// cryptographically verify the off-chain AI output itself; proof verification
     /// and deterministic funding policy remain independent on-chain controls.
-    function recordUnderwritingDecision(bytes32 invoiceId, bytes32 decisionHash) external onlyOwner {
+    function recordUnderwritingDecision(bytes32 invoiceId, bytes32 decisionHash) external {
+        if (msg.sender != operator && msg.sender != owner()) revert NotOperator();
         AdvanceRequest storage advance = advances[invoiceId];
         if (advance.status != AdvanceStatus.Registered) revert AdvanceNotPending();
         require(decisionHash != bytes32(0), "Empty decision hash");
@@ -248,6 +267,20 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
         if (advance.status != AdvanceStatus.PendingConfirmation) revert AdvanceNotPending();
         advance.status = AdvanceStatus.Rejected;
         emit AdvanceRejected(invoiceId, msg.sender, reason);
+    }
+
+    /// @notice Cancels an advance still in Registered status - the only
+    /// recovery path when the source-chain confirmation can never match
+    /// (e.g. confirmDelivery/confirmRepayment was called with a wrong
+    /// amount and the source event is now immutable). Deliberately
+    /// restricted to Registered: an advance that already reached
+    /// AutoFunded/PendingConfirmation/Funded involves real money and must
+    /// go through rejectPendingAdvance or simply run its course instead.
+    function cancelAdvance(bytes32 invoiceId, string calldata reason) external onlyOwner {
+        AdvanceRequest storage advance = advances[invoiceId];
+        if (advance.status != AdvanceStatus.Registered) revert AdvanceNotPending();
+        advance.status = AdvanceStatus.Cancelled;
+        emit AdvanceCancelled(invoiceId, msg.sender, reason);
     }
 
     function acknowledgeRepaymentFromQuery(

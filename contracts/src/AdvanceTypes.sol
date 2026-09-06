@@ -9,13 +9,16 @@ enum AdvanceStatus {
     PendingConfirmation, // 3 - policy flagged WARN; waiting on a human guardian
     Funded, // 4 - funds released to the supplier
     Rejected, // 5 - guardian rejected, or hard policy rule blocked it
-    Repaid // 6 - buyer's repayment was verified on-chain
+    Repaid, // 6 - buyer's repayment was verified on-chain
+    Cancelled // 7 - owner cancelled a Registered advance that can never be
+              //     proven (e.g. source-chain event amount will never match
+              //     the registered invoiceAmount) - see cancelAdvance
 }
 
 /// @notice A single invoice-financing advance: a supplier ships goods to a
 /// buyer and wants an immediate cash advance against the invoice, released
 /// the moment delivery/acceptance is verifiably confirmed on the buyer's
-/// chain — not when a centralized factoring desk gets around to checking.
+/// chain - not when a centralized factoring desk gets around to checking.
 struct AdvanceRequest {
     bytes32 invoiceId;
     address supplier; // who gets the advance, on Creditcoin

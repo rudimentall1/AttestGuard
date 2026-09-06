@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-This is a hackathon-stage project on testnet only — no mainnet funds are at
+This is a hackathon-stage project on testnet only - no mainnet funds are at
 risk. If you find a real issue, open a GitHub issue or reach out directly;
 there's no bug bounty program at this stage.
 
@@ -17,7 +17,7 @@ necessary to evaluate what the system actually guarantees.
 event if the Block Prover precompile (`0x0FD2`) verifies a real Merkle
 inclusion + continuity proof for it. This means: **the event really happened,
 on the real source chain, in a real mined transaction.** No off-chain agent,
-no oracle operator, and no owner action can forge that proof — it is checked
+no oracle operator, and no owner action can forge that proof - it is checked
 by Creditcoin's own proof infrastructure, not by this contract's code alone.
 
 What it does NOT guarantee: that the address which triggered the event is who
@@ -35,7 +35,7 @@ per-supplier daily cap, global maximum, and the pending-confirmation path.
 This is enforced in the contract itself, so a compromised or buggy off-chain
 agent cannot force a bad advance through by changing its local policy result.
 
-### 3. What the bounded AI layer guarantees — and does not
+### 3. What the bounded AI layer guarantees - and does not
 
 The AI/LLM layer is **advisory evidence, never authorization**.
 
@@ -48,7 +48,9 @@ The AI/LLM layer is **advisory evidence, never authorization**.
 - Missing delivery/proof verification forces a zero recommendation and
   elevated risk.
 - `routing.ts` is monotonic: AI can escalate review but cannot weaken a
-  deterministic `BLOCK` or `WARN` result.
+  deterministic `BLOCK` or `WARN` result. `AI_REVIEW_RECOMMENDED` now
+  actually holds `fundAdvanceFromQuery` (see `shouldHoldForReview` in
+  `worker.ts`) - it is not just a log line.
 - `explain.ts` only turns an already-determined result into human-readable
   text.
 
@@ -72,7 +74,7 @@ uses the same `processedQueries` keyspace as funding. See
 ### 5. What is currently NOT decentralized (by design, at this stage)
 
 - **`registerAdvance` is `onlyOwner`.** The deployer's key decides which
-  invoices exist at all — supplier, buyer and amounts are owner-asserted at
+  invoices exist at all - supplier, buyer and amounts are owner-asserted at
   registration time. Attestcoin later confirms that the registered buyer
   address really produced the proven source-chain event; it does not
   independently confirm that the underlying invoice or business relationship
@@ -88,6 +90,18 @@ uses the same `processedQueries` keyspace as funding. See
   real-world delivery actually occurred outside the source chain. A
   production system would need stronger business-process controls around
   who may call the source contract.
+- **The deployer key is `owner()` by default, and until `setOperator` is
+  called, the same key is also `operator`.** The always-online worker
+  process only strictly needs `operator` (for `recordUnderwritingDecision`)
+  -- it never needs to call `withdrawLiquidity`, `pause`,
+  `registerAdvance`, `cancelAdvance`, or `setGuardianConfirmer`, all of
+  which remain `onlyOwner`. Running the worker with a separate operator
+  key (`setOperator(workerAddress)`, called once by the owner) means a
+  compromised worker process key cannot drain the pool or change policy --
+  it can only record decision hashes for advances already in `Registered`
+  state, which is a one-shot, idempotent write with no funds impact. This
+  is not yet wired into the deploy scripts or worker configuration; doing
+  so is an operational step, not a code change.
 
 ### 6. Historical testnet key exposure and rotation
 
@@ -107,6 +121,6 @@ before any deployment holding real value.
 ## Key hygiene note
 
 Wallets used for testnet deployment and demo scripts in this repository
-should be treated as burner keys — generate fresh ones for anything beyond
+should be treated as burner keys - generate fresh ones for anything beyond
 throwaway testnet demonstration, never commit private keys, and never reuse a
 demo/testnet private key for anything holding real value.
