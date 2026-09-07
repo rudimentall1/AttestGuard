@@ -1,0 +1,5 @@
+# False positives reviewed and confirmed safe.
+# This is a public, on-chain testnet contract address (DemoAdvanceToken),
+# not a secret. gitleaks' generic-api-key rule flags it purely on hex
+# length/entropy. See commit 7796a35 for the finding.
+7796a35ca65c665048f1634fb53d4af8c184b7b0:attestguard-readme-redeploy-update.patch:generic-api-key:28
