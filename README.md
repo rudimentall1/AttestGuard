@@ -226,31 +226,31 @@ Implemented:
 
 # Live deployment
 
-Current demo deployment:
+Current demo deployment (redeployed after the on-chain relationship-guardrail fix in commit 9d742df — the previous address 0x7d73424a8256C0b2BA245e5d5a3De8820E45F390 is stale and no longer used):
 
 ## Creditcoin CC3 testnet
 
 AttestGuardManager:
 
 
-0x7d73424a8256C0b2BA245e5d5a3De8820E45F390
+0x59AF421cB35fc23aB6C8ee42743e6176040031f4
 
 
 EvmV1Decoder:
 
 
-0x73b647cbA2FE75Ba05B8e12ef8F8D6327D6367bF
+0x2Ce636d6240f8955d085a896e12429f8B3c7db26
 
 
 DemoAdvanceToken:
 
 
-0xAE519FC2Ba8e6fFE6473195c092bF1BAe986ff90
+0x79EaFd0B5eC8D3f945E6BB2817ed90b046c0d0Af
 
 
 Explorer:
 
-https://creditcoin-testnet.blockscout.com/address/0x7d73424a8256C0b2BA245e5d5a3De8820E45F390
+https://creditcoin-testnet.blockscout.com/address/0x59AF421cB35fc23aB6C8ee42743e6176040031f4
 
 ## Ethereum Sepolia
 

@@ -64,7 +64,7 @@ A deterministic envelope then caps the proposed amount and applies the minimum r
 
 ## Demo flow
 
-Use the existing real-testnet deployment for the currently documented funding demo. Do not describe the newer proof-gated repayment code as deployed at that address until a fresh deployment is performed.
+Use the current testnet deployment documented in `README.md` (redeployed in commit 9d742df, which also added the on-chain first-relationship/prior-default guardrail). Both the funding path and the proof-gated repayment path are live and configured (source contract registered, guardian set, vault funded) at that address.
 
 Recommended five-minute demo:
 
@@ -84,4 +84,4 @@ The source-chain contract is also an application-level trust boundary: Attestcoi
 
 ## Current status
 
-CI on `main` is green after the bounded-underwriting merge. The repository contains real Hardhat compilation/tests and off-chain TypeScript tests. The live deployment documented in `README.md` is the older v2 funding deployment; newer repayment and buyer-history code should only be called live after a fresh deployment and on-chain verification.
+CI on `main` is green after the bounded-underwriting merge. The repository contains real Hardhat compilation/tests and off-chain TypeScript tests. The live deployment documented in `README.md` is the current deployment, redeployed after the on-chain relationship-guardrail fix (commit 9d742df); it includes both funding and proof-gated repayment, and has been registered/configured (source contract, vault liquidity) against Sepolia's `TradeConfirmation`.

@@ -1,0 +1,60 @@
+diff --git a/README.md b/README.md
+index ffbe385..b1f585c 100644
+--- a/README.md
++++ b/README.md
+@@ -226,31 +226,31 @@ Implemented:
+ 
+ # Live deployment
+ 
+-Current demo deployment:
++Current demo deployment (redeployed after the on-chain relationship-guardrail fix in commit 9d742df — the previous address 0x7d73424a8256C0b2BA245e5d5a3De8820E45F390 is stale and no longer used):
+ 
+ ## Creditcoin CC3 testnet
+ 
+ AttestGuardManager:
+ 
+ 
+-0x7d73424a8256C0b2BA245e5d5a3De8820E45F390
++0x59AF421cB35fc23aB6C8ee42743e6176040031f4
+ 
+ 
+ EvmV1Decoder:
+ 
+ 
+-0x73b647cbA2FE75Ba05B8e12ef8F8D6327D6367bF
++0x2Ce636d6240f8955d085a896e12429f8B3c7db26
+ 
+ 
+ DemoAdvanceToken:
+ 
+ 
+-0xAE519FC2Ba8e6fFE6473195c092bF1BAe986ff90
++0x79EaFd0B5eC8D3f945E6BB2817ed90b046c0d0Af
+ 
+ 
+ Explorer:
+ 
+-https://creditcoin-testnet.blockscout.com/address/0x7d73424a8256C0b2BA245e5d5a3De8820E45F390
++https://creditcoin-testnet.blockscout.com/address/0x59AF421cB35fc23aB6C8ee42743e6176040031f4
+ 
+ ## Ethereum Sepolia
+ 
+diff --git a/docs/JUDGE_GUIDE.md b/docs/JUDGE_GUIDE.md
+index 2665256..e50ac62 100644
+--- a/docs/JUDGE_GUIDE.md
++++ b/docs/JUDGE_GUIDE.md
+@@ -64,7 +64,7 @@ A deterministic envelope then caps the proposed amount and applies the minimum r
+ 
+ ## Demo flow
+ 
+-Use the existing real-testnet deployment for the currently documented funding demo. Do not describe the newer proof-gated repayment code as deployed at that address until a fresh deployment is performed.
++Use the current testnet deployment documented in `README.md` (redeployed in commit 9d742df, which also added the on-chain first-relationship/prior-default guardrail). Both the funding path and the proof-gated repayment path are live and configured (source contract registered, guardian set, vault funded) at that address.
+ 
+ Recommended five-minute demo:
+ 
+@@ -84,4 +84,4 @@ The source-chain contract is also an application-level trust boundary: Attestcoi
+ 
+ ## Current status
+ 
+-CI on `main` is green after the bounded-underwriting merge. The repository contains real Hardhat compilation/tests and off-chain TypeScript tests. The live deployment documented in `README.md` is the older v2 funding deployment; newer repayment and buyer-history code should only be called live after a fresh deployment and on-chain verification.
++CI on `main` is green after the bounded-underwriting merge. The repository contains real Hardhat compilation/tests and off-chain TypeScript tests. The live deployment documented in `README.md` is the current deployment, redeployed after the on-chain relationship-guardrail fix (commit 9d742df); it includes both funding and proof-gated repayment, and has been registered/configured (source contract, vault liquidity) against Sepolia's `TradeConfirmation`.
