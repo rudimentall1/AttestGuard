@@ -226,36 +226,35 @@ Implemented:
 
 # Live deployment
 
-Current demo deployment (redeployed after the on-chain relationship-guardrail fix in commit 9d742df — the previous address 0x7d73424a8256C0b2BA245e5d5a3De8820E45F390 is stale and no longer used):
+Current demo deployment (redeployed with a rotated owner key — the two previous addresses, 0x7d73424a8256C0b2BA245e5d5a3De8820E45F390 and 0x59AF421cB35fc23aB6C8ee42743e6176040031f4, are both stale and no longer used):
 
 > **Note on the demo video:** the walkthrough video linked from the DoraHacks
-> submission was recorded against the previous (0x7d73424a8256...) address,
-> before this fix. The mechanism it shows is unchanged; only the deployed
-> address is different now. See commit 9d742df for what changed and why.
+> submission was recorded against an earlier address. The mechanism it shows
+> is unchanged; only the deployed address and owner key are different now.
 
 ## Creditcoin CC3 testnet
 
 AttestGuardManager:
 
 
-0x59AF421cB35fc23aB6C8ee42743e6176040031f4
+0x048827Fea5864e14F3824a6B2487cdEe889EA5D8
 
 
 EvmV1Decoder:
 
 
-0x2Ce636d6240f8955d085a896e12429f8B3c7db26
+0x35AfE83Bb242e8fb1bBf085FEeCAab462DCe6eD6
 
 
 DemoAdvanceToken:
 
 
-0x79EaFd0B5eC8D3f945E6BB2817ed90b046c0d0Af
+0xccA56Cb1f15b1A20E24Db095104859f28D254f95
 
 
 Explorer:
 
-https://creditcoin-testnet.blockscout.com/address/0x59AF421cB35fc23aB6C8ee42743e6176040031f4
+https://creditcoin-testnet.blockscout.com/address/0x048827Fea5864e14F3824a6B2487cdEe889EA5D8
 
 ## Ethereum Sepolia
 
