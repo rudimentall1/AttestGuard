@@ -1,0 +1,16 @@
+diff --git a/README.md b/README.md
+index b1f585c..62b3943 100644
+--- a/README.md
++++ b/README.md
+@@ -228,6 +228,11 @@ Implemented:
+ 
+ Current demo deployment (redeployed after the on-chain relationship-guardrail fix in commit 9d742df — the previous address 0x7d73424a8256C0b2BA245e5d5a3De8820E45F390 is stale and no longer used):
+ 
++> **Note on the demo video:** the walkthrough video linked from the DoraHacks
++> submission was recorded against the previous (0x7d73424a8256...) address,
++> before this fix. The mechanism it shows is unchanged; only the deployed
++> address is different now. See commit 9d742df for what changed and why.
++
+ ## Creditcoin CC3 testnet
+ 
+ AttestGuardManager:
