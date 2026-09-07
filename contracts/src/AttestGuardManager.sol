@@ -41,6 +41,18 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     address public guardianConfirmer;
     address public operator;
 
+    /// @notice Per (supplier, buyer) relationship funding count and default
+    /// flag, keyed by keccak256(supplier, buyer). This is what makes the
+    /// "first advance with this buyer" and "prior default with this buyer"
+    /// checks real on-chain guardrails instead of an off-chain-only
+    /// suggestion: fundAdvanceFromQuery is intentionally permissionless
+    /// (see ADR-0006 -- the proof authorizes the state change, not the
+    /// caller), so any safety property that must always hold has to be
+    /// enforced here, not only in the off-chain worker's policy.ts, which
+    /// a caller can simply not run.
+    mapping(bytes32 => uint256) public relationshipFundedCount;
+    mapping(bytes32 => bool) public relationshipDefaulted;
+
     uint256 public constant DEFAULT_AUTO_APPROVE_CAP = 500 ether;
     uint256 public constant AUTO_APPROVE_CAP_GROWTH_PER_REPAYMENT = 250 ether;
     uint256 public constant SECONDS_PER_DAY = 1 days;
@@ -58,6 +70,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     event OperatorUpdated(address indexed newOperator);
     event LiquidityWithdrawn(address indexed to, uint256 amount);
     event UnderwritingDecisionRecorded(bytes32 indexed invoiceId, bytes32 indexed decisionHash);
+    event RelationshipDefaultReported(address indexed supplier, address indexed buyer, bytes32 indexed invoiceId, string reason);
 
     error QueryAlreadyProcessed();
     error ProofVerificationFailed();
@@ -121,6 +134,28 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
 
     function pause() external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
+
+    /// @notice Marks the (supplier, buyer) relationship for a given invoice
+    /// as having a prior default. Once set, this relationship can never
+    /// auto-fund again -- every future advance between this exact supplier
+    /// and buyer pair is forced to PendingConfirmation regardless of
+    /// amount or caps, and only a human guardian can release it.
+    /// @dev Owner-attested, same trust boundary as registerAdvance itself
+    /// (see SECURITY.md / JUDGE_GUIDE.md "what is intentionally trusted").
+    /// This is not proof-gated because a default is an absence of a proof
+    /// (repayment never arrived), which cannot itself be cryptographically
+    /// proven the way delivery/repayment events can.
+    function reportDefault(bytes32 invoiceId, string calldata reason) external onlyOwner {
+        AdvanceRequest storage advance = advances[invoiceId];
+        if (advance.status == AdvanceStatus.None) revert UnknownAdvance();
+        bytes32 relKey = _relationshipKey(advance.supplier, advance.buyer);
+        relationshipDefaulted[relKey] = true;
+        emit RelationshipDefaultReported(advance.supplier, advance.buyer, invoiceId, reason);
+    }
+
+    function _relationshipKey(address supplier, address buyer) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(supplier, buyer));
+    }
 
     function registerAdvance(
         bytes32 invoiceId,
@@ -223,12 +258,37 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     function _applyPolicyAndMaybeFund(AdvanceRequest storage advance) internal returns (bool autoFunded) {
         uint256 amount = advance.requestedAdvanceAmount;
         address supplier = advance.supplier;
+        address buyer = advance.buyer;
         if (amount > globalMaxAdvance) revert AboveGlobalMax();
+
+        bytes32 relKey = _relationshipKey(supplier, buyer);
+
+        // These two conditions used to be enforced only by the off-chain
+        // worker's policy.ts (BLOCK verdict), which meant anyone could
+        // bypass them by calling fundAdvanceFromQuery directly with a
+        // valid proof, since this function has no caller restriction by
+        // design. They are now hard on-chain gates: no amount, cap, or
+        // guardian-blind auto-path can skip them. A guardian can still
+        // release the funds via confirmPendingAdvance after reviewing --
+        // that is the intended human-in-the-loop path for exactly this
+        // situation, not a silent auto-fund.
+        if (relationshipDefaulted[relKey]) {
+            advance.status = AdvanceStatus.PendingConfirmation;
+            emit AdvanceFlaggedForConfirmation(advance.invoiceId, supplier, amount, "prior default with this buyer relationship");
+            return false;
+        }
+        if (relationshipFundedCount[relKey] == 0) {
+            advance.status = AdvanceStatus.PendingConfirmation;
+            emit AdvanceFlaggedForConfirmation(advance.invoiceId, supplier, amount, "first advance with this buyer relationship");
+            return false;
+        }
+
         _rollDailyBucketIfNeeded(supplier);
         bool withinAutoCap = amount <= autoApproveCap[supplier];
         bool withinDailyCap = suppliersFundedToday[supplier] + amount <= perSupplierDailyCap;
         if (withinAutoCap && withinDailyCap) {
             suppliersFundedToday[supplier] += amount;
+            relationshipFundedCount[relKey] += 1;
             ADVANCE_TOKEN.safeTransfer(supplier, amount);
             advance.status = AdvanceStatus.Funded;
             emit AdvanceAutoFunded(advance.invoiceId, supplier, amount);
@@ -255,6 +315,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
 
         _rollDailyBucketIfNeeded(advance.supplier);
         suppliersFundedToday[advance.supplier] += advance.requestedAdvanceAmount;
+        relationshipFundedCount[_relationshipKey(advance.supplier, advance.buyer)] += 1;
 
         advance.status = AdvanceStatus.Funded;
         ADVANCE_TOKEN.safeTransfer(advance.supplier, advance.requestedAdvanceAmount);

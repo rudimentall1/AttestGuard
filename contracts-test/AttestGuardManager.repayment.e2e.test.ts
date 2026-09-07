@@ -133,7 +133,17 @@ describe("AttestGuardManager - acknowledgeRepaymentFromQuery (verified repayment
       []
     );
 
-    const fundedAdvance = await manager.getAdvance(invoiceId);
+    // A brand-new (supplier, buyer) relationship is now always flagged for
+    // guardian confirmation on its first advance, even within caps (see
+    // the on-chain relationshipFundedCount gate in _applyPolicyAndMaybeFund).
+    // This fixture's actual subject under test is repayment, not the
+    // relationship gate, so just clear that gate the same way a real
+    // guardian would and move on.
+    let fundedAdvance = await manager.getAdvance(invoiceId);
+    if (fundedAdvance.status === 3n) {
+      await manager.connect(guardian).confirmPendingAdvance(invoiceId);
+      fundedAdvance = await manager.getAdvance(invoiceId);
+    }
     if (fundedAdvance.status !== 4n) {
       throw new Error(`fixture setup failed: expected Funded (4), got ${fundedAdvance.status}`);
     }

@@ -106,8 +106,57 @@ describe("AttestGuardManager - full fundAdvanceFromQuery path (mock precompile)"
     return { owner, supplier, buyer, guardian, other, token, manager, sourceConfirmationContract };
   }
 
-  it("auto-funds an advance end-to-end when the proof and amount are both within policy", async function () {
-    const { manager, token, supplier, buyer, sourceConfirmationContract } = await deployFixture();
+  it("flags a brand-new supplier/buyer relationship's first advance for guardian confirmation, even within all caps", async function () {
+    // This is the on-chain enforcement of what used to be an off-chain-only,
+    // trivially bypassable check (policy.ts's "first advance with this
+    // buyer" BLOCK). Anyone calling fundAdvanceFromQuery directly with a
+    // valid proof - not just the worker - must hit this gate.
+    const { manager, supplier, buyer, sourceConfirmationContract, other } = await deployFixture();
+
+    const invoiceId = ethers.id("e2e-invoice-first-relationship");
+    const invoiceAmount = ethers.parseEther("1000");
+    const amount = ethers.parseEther("300"); // well within the 500-ether default auto-approve cap
+    await manager.registerAdvance(invoiceId, supplier.address, buyer.address, invoiceAmount, amount, "e2e first-relationship case");
+
+    const encodedTransaction = buildEncodedTransaction({
+      from: buyer.address,
+      to: sourceConfirmationContract,
+      receiptStatus: 1,
+      logs: [deliveryLog({ sourceConfirmationContract, invoiceId, buyer: buyer.address, supplier: supplier.address, amount: invoiceAmount })],
+    });
+
+    const root = fakeRoot("first-relationship-case");
+
+    // Called by `other`, an address with no special role at all - proving
+    // this gate does not depend on who submits the proof.
+    const tx = await manager.connect(other).fundAdvanceFromQuery(invoiceId, 1n, encodedTransaction, root, [], ethers.ZeroHash, []);
+    await expect(tx)
+      .to.emit(manager, "AdvanceFlaggedForConfirmation")
+      .withArgs(invoiceId, supplier.address, amount, "first advance with this buyer relationship");
+
+    const advance = await manager.getAdvance(invoiceId);
+    expect(advance.status).to.equal(3n); // PendingConfirmation, NOT auto-funded
+  });
+
+  it("auto-funds a second advance for an already-established supplier/buyer relationship, within caps", async function () {
+    const { manager, token, supplier, buyer, guardian, sourceConfirmationContract } = await deployFixture();
+
+    // Prime the relationship: first advance always goes to guardian review
+    // (see test above), and the guardian confirming it is what
+    // "establishes" the relationship on-chain.
+    const primeInvoiceId = ethers.id("e2e-invoice-prime");
+    const primeAmount = ethers.parseEther("100");
+    await manager.registerAdvance(primeInvoiceId, supplier.address, buyer.address, primeAmount, primeAmount, "priming advance");
+    const primeTx = buildEncodedTransaction({
+      from: buyer.address,
+      to: sourceConfirmationContract,
+      receiptStatus: 1,
+      logs: [deliveryLog({ sourceConfirmationContract, invoiceId: primeInvoiceId, buyer: buyer.address, supplier: supplier.address, amount: primeAmount })],
+    });
+    await manager.fundAdvanceFromQuery(primeInvoiceId, 1n, primeTx, fakeRoot("prime-case"), [], ethers.ZeroHash, []);
+    await manager.connect(guardian).confirmPendingAdvance(primeInvoiceId);
+    expect((await manager.getAdvance(primeInvoiceId)).status).to.equal(4n);
+    expect(await manager.relationshipFundedCount(ethers.solidityPackedKeccak256(["address", "address"], [supplier.address, buyer.address]))).to.equal(1n);
 
     const invoiceId = ethers.id("e2e-invoice-auto");
     const invoiceAmount = ethers.parseEther("1000");
@@ -130,6 +179,46 @@ describe("AttestGuardManager - full fundAdvanceFromQuery path (mock precompile)"
     const advance = await manager.getAdvance(invoiceId);
     expect(advance.status).to.equal(4n);
     expect(await token.balanceOf(supplier.address)).to.equal(supplierBalanceBefore + amount);
+  });
+
+  it("never auto-funds a relationship the owner has marked as defaulted, even within caps, even after prior successful advances", async function () {
+    const { manager, supplier, buyer, guardian, sourceConfirmationContract } = await deployFixture();
+
+    // Establish the relationship first (see priming pattern above), so we
+    // are proving reportDefault overrides an *established* relationship,
+    // not just a first-time one.
+    const primeInvoiceId = ethers.id("e2e-invoice-default-prime");
+    const primeAmount = ethers.parseEther("100");
+    await manager.registerAdvance(primeInvoiceId, supplier.address, buyer.address, primeAmount, primeAmount, "priming advance");
+    const primeTx = buildEncodedTransaction({
+      from: buyer.address,
+      to: sourceConfirmationContract,
+      receiptStatus: 1,
+      logs: [deliveryLog({ sourceConfirmationContract, invoiceId: primeInvoiceId, buyer: buyer.address, supplier: supplier.address, amount: primeAmount })],
+    });
+    await manager.fundAdvanceFromQuery(primeInvoiceId, 1n, primeTx, fakeRoot("default-prime-case"), [], ethers.ZeroHash, []);
+    await manager.connect(guardian).confirmPendingAdvance(primeInvoiceId);
+
+    await expect(manager.reportDefault(primeInvoiceId, "buyer never repaid within terms"))
+      .to.emit(manager, "RelationshipDefaultReported")
+      .withArgs(supplier.address, buyer.address, primeInvoiceId, "buyer never repaid within terms");
+    expect(await manager.relationshipDefaulted(ethers.solidityPackedKeccak256(["address", "address"], [supplier.address, buyer.address]))).to.equal(true);
+
+    const invoiceId = ethers.id("e2e-invoice-after-default");
+    const amount = ethers.parseEther("50"); // trivially within every cap
+    await manager.registerAdvance(invoiceId, supplier.address, buyer.address, amount, amount, "advance attempted after default");
+    const encodedTransaction = buildEncodedTransaction({
+      from: buyer.address,
+      to: sourceConfirmationContract,
+      receiptStatus: 1,
+      logs: [deliveryLog({ sourceConfirmationContract, invoiceId, buyer: buyer.address, supplier: supplier.address, amount })],
+    });
+
+    const tx = await manager.fundAdvanceFromQuery(invoiceId, 2n, encodedTransaction, fakeRoot("after-default-case"), [], ethers.ZeroHash, []);
+    await expect(tx)
+      .to.emit(manager, "AdvanceFlaggedForConfirmation")
+      .withArgs(invoiceId, supplier.address, amount, "prior default with this buyer relationship");
+    expect((await manager.getAdvance(invoiceId)).status).to.equal(3n);
   });
 
   it("flags an advance for guardian confirmation instead of auto-funding when it exceeds the cap", async function () {
