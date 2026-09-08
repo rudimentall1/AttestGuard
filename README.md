@@ -1,5 +1,7 @@
 # AttestGuard
 
+**[Live demo page →](https://rudimentall1.github.io/AttestGuard/)** — real on-chain proof, live deployment addresses, test results.
+
 AI-assisted trade finance workflow with deterministic policy control on Creditcoin.
 
 AttestGuard allows suppliers to receive invoice advances after delivery events are cryptographically verified.
