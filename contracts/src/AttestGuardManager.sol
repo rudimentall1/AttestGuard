@@ -53,6 +53,26 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     mapping(bytes32 => uint256) public relationshipFundedCount;
     mapping(bytes32 => bool) public relationshipDefaulted;
 
+    /// @notice Depositor share accounting for the funding vault. Replaces a
+    /// prior version where deposits went into the contract with no claim
+    /// back out except through the owner -- any depositor who wasn't the
+    /// owner had no way to ever get their tokens back. Shares are minted
+    /// pro-rata to the vault's balance at deposit time and redeemed
+    /// pro-rata at withdrawal time (a simple, first-principles version of
+    /// the standard ERC4626 share pattern, kept minimal since this vault
+    /// is spend-down only: acknowledgeRepaymentFromQuery is a proof/
+    /// reputation check, not a token inflow -- see its comment -- so
+    /// there is no yield to account for here, only fair entry/exit).
+    mapping(address => uint256) public sharesOf;
+    uint256 public totalShares;
+
+    /// @notice Sum of requestedAdvanceAmount for every advance currently in
+    /// Registered or PendingConfirmation status. Withdrawals may never
+    /// take the vault's balance below this: it is money the vault has
+    /// already promised to a supplier pending proof or guardian sign-off,
+    /// not idle liquidity free for a depositor to pull out from under it.
+    uint256 public reservedForPending;
+
     uint256 public constant DEFAULT_AUTO_APPROVE_CAP = 500 ether;
     uint256 public constant AUTO_APPROVE_CAP_GROWTH_PER_REPAYMENT = 250 ether;
     uint256 public constant SECONDS_PER_DAY = 1 days;
@@ -69,6 +89,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     event GuardianConfirmerUpdated(address indexed newGuardian);
     event OperatorUpdated(address indexed newOperator);
     event LiquidityWithdrawn(address indexed to, uint256 amount);
+    event LiquidityDeposited(address indexed from, uint256 amount, uint256 shares);
     event UnderwritingDecisionRecorded(bytes32 indexed invoiceId, bytes32 indexed decisionHash);
     event RelationshipDefaultReported(address indexed supplier, address indexed buyer, bytes32 indexed invoiceId, string reason);
 
@@ -84,6 +105,9 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     error NotGuardianConfirmer();
     error NotOperator();
     error AboveGlobalMax();
+    error ZeroAmount();
+    error InsufficientShares();
+    error InsufficientAvailableLiquidity();
 
     constructor(address advanceToken_, uint64 sourceChainKey_, uint256 globalMaxAdvance_, uint256 perSupplierDailyCap_)
         Ownable(msg.sender)
@@ -123,13 +147,50 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
     function setGlobalMaxAdvance(uint256 amount) external onlyOwner { globalMaxAdvance = amount; }
     function setPerSupplierDailyCap(uint256 amount) external onlyOwner { perSupplierDailyCap = amount; }
 
+    /// @notice Deposits `amount` of ADVANCE_TOKEN into the funding vault and
+    /// mints shares proportional to the vault's current balance (1:1 for
+    /// the first deposit). Anyone can deposit; nothing here is owner-only.
     function depositLiquidity(uint256 amount) external {
+        if (amount == 0) revert ZeroAmount();
+        uint256 currentBalance = ADVANCE_TOKEN.balanceOf(address(this));
+        uint256 shares = (totalShares == 0 || currentBalance == 0) ? amount : (amount * totalShares) / currentBalance;
+        if (shares == 0) revert ZeroAmount();
+
         ADVANCE_TOKEN.safeTransferFrom(msg.sender, address(this), amount);
+        sharesOf[msg.sender] += shares;
+        totalShares += shares;
+        emit LiquidityDeposited(msg.sender, amount, shares);
     }
 
-    function withdrawLiquidity(uint256 amount) external onlyOwner {
+    /// @notice Burns `shares` of the caller's own shares and pays out their
+    /// pro-rata claim on the vault's current balance. Any depositor can
+    /// withdraw their own shares -- this is no longer owner-only, because
+    /// an owner-only withdraw on other people's deposits with no
+    /// depositor-side claim back is a honeypot, not a funding vault.
+    /// Cannot pull the balance below reservedForPending: money already
+    /// committed to a Registered/PendingConfirmation advance isn't idle
+    /// liquidity a depositor can withdraw out from under a supplier who is
+    /// waiting on it.
+    function withdrawLiquidity(uint256 shares) external nonReentrant {
+        if (shares == 0) revert ZeroAmount();
+        if (shares > sharesOf[msg.sender]) revert InsufficientShares();
+
+        uint256 currentBalance = ADVANCE_TOKEN.balanceOf(address(this));
+        uint256 amount = (shares * currentBalance) / totalShares;
+        if (currentBalance - amount < reservedForPending) revert InsufficientAvailableLiquidity();
+
+        sharesOf[msg.sender] -= shares;
+        totalShares -= shares;
         ADVANCE_TOKEN.safeTransfer(msg.sender, amount);
         emit LiquidityWithdrawn(msg.sender, amount);
+    }
+
+    /// @notice Liquidity currently free to withdraw -- the vault's balance
+    /// minus whatever is already committed to advances that haven't paid
+    /// out yet. A view helper for callers/UIs; not used in any check here.
+    function availableLiquidity() external view returns (uint256) {
+        uint256 currentBalance = ADVANCE_TOKEN.balanceOf(address(this));
+        return currentBalance > reservedForPending ? currentBalance - reservedForPending : 0;
     }
 
     function pause() external onlyOwner { _pause(); }
@@ -184,6 +245,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
             autoApproveCap[supplier] = DEFAULT_AUTO_APPROVE_CAP;
             emit AutoApproveCapUpdated(supplier, DEFAULT_AUTO_APPROVE_CAP);
         }
+        reservedForPending += requestedAdvanceAmount;
         emit AdvanceRegistered(invoiceId, supplier, buyer, requestedAdvanceAmount);
     }
 
@@ -289,6 +351,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
         if (withinAutoCap && withinDailyCap) {
             suppliersFundedToday[supplier] += amount;
             relationshipFundedCount[relKey] += 1;
+            reservedForPending -= amount;
             ADVANCE_TOKEN.safeTransfer(supplier, amount);
             advance.status = AdvanceStatus.Funded;
             emit AdvanceAutoFunded(advance.invoiceId, supplier, amount);
@@ -316,6 +379,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
         _rollDailyBucketIfNeeded(advance.supplier);
         suppliersFundedToday[advance.supplier] += advance.requestedAdvanceAmount;
         relationshipFundedCount[_relationshipKey(advance.supplier, advance.buyer)] += 1;
+        reservedForPending -= advance.requestedAdvanceAmount;
 
         advance.status = AdvanceStatus.Funded;
         ADVANCE_TOKEN.safeTransfer(advance.supplier, advance.requestedAdvanceAmount);
@@ -327,6 +391,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
         AdvanceRequest storage advance = advances[invoiceId];
         if (advance.status != AdvanceStatus.PendingConfirmation) revert AdvanceNotPending();
         advance.status = AdvanceStatus.Rejected;
+        reservedForPending -= advance.requestedAdvanceAmount;
         emit AdvanceRejected(invoiceId, msg.sender, reason);
     }
 
@@ -341,6 +406,7 @@ contract AttestGuardManager is Ownable, ReentrancyGuard, Pausable {
         AdvanceRequest storage advance = advances[invoiceId];
         if (advance.status != AdvanceStatus.Registered) revert AdvanceNotPending();
         advance.status = AdvanceStatus.Cancelled;
+        reservedForPending -= advance.requestedAdvanceAmount;
         emit AdvanceCancelled(invoiceId, msg.sender, reason);
     }
 

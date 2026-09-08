@@ -121,22 +121,67 @@ describe("AttestGuardManager", function () {
     await expect(manager.connect(other).setGlobalMaxAdvance(ethers.parseEther("1"))).to.be.reverted;
   });
 
-  it("lets the owner withdraw liquidity that was deposited but never funded out", async function () {
+  it("lets a depositor withdraw their own shares, proportional to the vault's balance, when it was never funded out", async function () {
     const { manager, token, owner } = await deployFixture();
     const managerAddress = await manager.getAddress();
     const before = await token.balanceOf(managerAddress);
     expect(before).to.equal(ethers.parseEther("100000"));
 
+    // deployFixture's owner deposit was the first-ever deposit, so shares == amount (100000).
+    expect(await manager.sharesOf(owner.address)).to.equal(ethers.parseEther("100000"));
+
     const ownerBalanceBefore = await token.balanceOf(owner.address);
-    await manager.withdrawLiquidity(ethers.parseEther("40000"));
+    await expect(manager.withdrawLiquidity(ethers.parseEther("40000")))
+      .to.emit(manager, "LiquidityWithdrawn")
+      .withArgs(owner.address, ethers.parseEther("40000"));
 
     expect(await token.balanceOf(managerAddress)).to.equal(ethers.parseEther("60000"));
     expect(await token.balanceOf(owner.address)).to.equal(ownerBalanceBefore + ethers.parseEther("40000"));
+    expect(await manager.sharesOf(owner.address)).to.equal(ethers.parseEther("60000"));
   });
 
-  it("prevents a non-owner from withdrawing liquidity", async function () {
+  it("lets any depositor withdraw their own shares, not just the owner", async function () {
+    const { manager, token, other } = await deployFixture();
+    await token.transfer(other.address, ethers.parseEther("500"));
+    await token.connect(other).approve(await manager.getAddress(), ethers.parseEther("500"));
+    await manager.connect(other).depositLiquidity(ethers.parseEther("500"));
+
+    const balanceBefore = await token.balanceOf(other.address);
+    await manager.connect(other).withdrawLiquidity(await manager.sharesOf(other.address));
+    expect(await token.balanceOf(other.address)).to.be.greaterThanOrEqual(balanceBefore);
+  });
+
+  it("prevents withdrawing more shares than you own", async function () {
     const { manager, other } = await deployFixture();
-    await expect(manager.connect(other).withdrawLiquidity(ethers.parseEther("1"))).to.be.reverted;
+    await expect(manager.connect(other).withdrawLiquidity(ethers.parseEther("1"))).to.be.revertedWithCustomError(
+      manager,
+      "InsufficientShares"
+    );
+  });
+
+  it("prevents withdrawing liquidity that's reserved for a registered advance, even if the owner holds enough shares", async function () {
+    const { manager, supplier, buyer, owner } = await deployFixture();
+    // deployFixture deposited 100000 ether; register an advance close to that so withdrawing
+    // most of it would dip below what's reserved for this still-unfunded advance.
+    await manager.registerAdvance(
+      ethers.id("reserve-check-invoice"),
+      supplier.address,
+      buyer.address,
+      ethers.parseEther("90000"),
+      ethers.parseEther("90000"),
+      "large advance reserving most of the vault"
+    );
+    expect(await manager.reservedForPending()).to.equal(ethers.parseEther("90000"));
+    expect(await manager.availableLiquidity()).to.equal(ethers.parseEther("10000"));
+
+    // Owner holds all 100000 shares and could try to withdraw all of it -- must be blocked
+    // from taking the balance below the 90000 reserved for the pending advance.
+    await expect(
+      manager.connect(owner).withdrawLiquidity(ethers.parseEther("100000"))
+    ).to.be.revertedWithCustomError(manager, "InsufficientAvailableLiquidity");
+
+    // Withdrawing only the genuinely-available portion still works.
+    await manager.connect(owner).withdrawLiquidity(ethers.parseEther("10000"));
   });
 
   it("records one underwriting decision hash against a registered invoice", async function () {
