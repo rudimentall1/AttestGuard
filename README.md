@@ -266,6 +266,25 @@ TradeConfirmation:
 
 ---
 
+# Proven on-chain, not just in tests
+
+Ran the full cycle for real on the current deployment above, three separate
+signed transactions, all public:
+
+1. **Buyer confirms delivery on Sepolia** —
+   [`0xc1900129d72b479775332586be157c1701bcc10f69efd8abe62c7838728ba5e8`](https://sepolia.etherscan.io/tx/0xc1900129d72b479775332586be157c1701bcc10f69efd8abe62c7838728ba5e8)
+2. **Proof submitted to AttestGuardManager on Creditcoin** — this is a brand-new
+   supplier/buyer relationship, so the contract itself (not the off-chain
+   agent) flags it for guardian confirmation instead of auto-funding, even
+   though the amount is well within the funding cap —
+   [`0x50fd868ed98742ef2f8c67128c6746725bae58d855c7f5259823e5af7c2b88a7`](https://creditcoin-testnet.blockscout.com/tx/0x50fd868ed98742ef2f8c67128c6746725bae58d855c7f5259823e5af7c2b88a7)
+3. **Guardian confirms it, advance is funded** —
+   [`0xb8224de65b63735475330c345a99c5b2ee13e4e3e1918655639ebfd9715de28f`](https://creditcoin-testnet.blockscout.com/tx/0xb8224de65b63735475330c345a99c5b2ee13e4e3e1918655639ebfd9715de28f)
+
+Step 2 is the important one: it's the on-chain relationship guardrail
+actually firing on mainnet-equivalent infrastructure against a real
+Attestcoin proof, not a mocked one in a Hardhat test.
+
 # Decision hash trail
 
 The manager stores underwriting decision commitments.
@@ -290,14 +309,12 @@ It only stores a verifiable record.
 Agent tests:
 
 
-80 / 80 passing
+58 / 58 passing
 
 
 Covered:
 
-- proof verification;
-- signature verification;
-- tamper detection;
+- report/proof-bundle integrity (hash-based, tamper-evident — not a cryptographic signature);
 - deterministic decisions;
 - AI safety boundaries;
 - underwriting validation;
@@ -314,31 +331,39 @@ npm run test:agent
 npm run demo:full
 Demo example
 
-Input:
+This is the actual captured output of `npm run demo:full` against this repo's
+synthetic demo scenario (`generate-report.ts`), not a hand-written narrative:
 
-Invoice amount: $50,000
-Supplier history: VERIFIED
+```
+DECISION:
+Outcome: REVIEW
 Risk tier: A
 
-AI recommendation:
+DETERMINISTIC POLICY ENGINE:
+Verdict: WARN
+Reason: requested amount (60000000000) exceeds this supplier's current
+auto-approve cap (40000000000); on-chain policy will also flag this for
+guardian confirmation
 
-APPROVE $100,000
-Confidence: 0.99
+BOUNDED AI UNDERWRITING:
+Recommendation: 40000000000 base units
+Review required: false
 
-Deterministic policy:
+INTEGRITY (real hashes, computed by generate-report.ts):
+Decision hash:  0x7fa5170969a6de2c0522bdfa81fe5bdbae74aacaa182b2eb033d8416374bc272
+Evidence hash:  0xe40f59c09afb5b0868c1d17f32483f7f68e7697761a64fb8aa18a12e3715df4c
+AI trace hash:  0xf02328421210c857863f9fb91262762e834ac0760f3efbe09831aef2b763e179
 
-Maximum allowed advance: $40,000
+FINAL STATUS: REVIEW
+```
 
-Result:
-
-AI override rejected
-
-Policy engine has final authority
-
-FINAL STATUS:
-REVIEW_REQUIRED
-
-The AI suggestion is preserved for audit, but cannot bypass financial controls.
+The AI's recommendation is capped at the supplier's auto-approve limit before
+it ever reaches the policy engine — the policy engine still has final say,
+and this scenario ends in `REVIEW`, not an automatic payout. For a real
+first-time-buyer payout actually going through `PendingConfirmation` on live
+infrastructure, see "Proven on-chain" above — that one used real money-path
+transactions, this one is the local synthetic scenario the test suite and
+`npm run demo:full` exercise on every run.
 
 Repository structure
 contracts/
