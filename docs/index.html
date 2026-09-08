@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AttestGuard — proof-gated trade-finance advances on Creditcoin</title>
+<meta name="description" content="An AI agent proposes trade-finance advances; a deterministic contract decides. Proven on-chain, not just in tests.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F2EA;
+    --paper-raised:#FBFAF6;
+    --ink:#20221F;
+    --ink-soft:#54544D;
+    --rule:#CFC8B8;
+    --verified:#2E6B4A;
+    --verified-bg:#E6EEE7;
+    --pending:#A0651C;
+    --pending-bg:#F3E7D6;
+    --link:#33495C;
+    --max:760px;
+  }
+  *{box-sizing:border-box;}
+  html{-webkit-text-size-adjust:100%;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'IBM Plex Sans',sans-serif;
+    font-size:17px;
+    line-height:1.6;
+  }
+  ::selection{background:#D9CFAE;}
+  a{color:var(--link);}
+  a:focus-visible, button:focus-visible{outline:2px solid var(--link); outline-offset:3px;}
+
+  h1,h2{
+    font-family:'Newsreader',serif;
+    font-weight:500;
+    letter-spacing:-0.01em;
+    margin:0;
+  }
+
+  .sheet{
+    max-width:var(--max);
+    margin:0 auto;
+    padding:0 24px;
+  }
+
+  /* ---- masthead ---- */
+  header.masthead{
+    border-bottom:1px solid var(--rule);
+    padding:56px 0 28px;
+  }
+  .masthead-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:20px;
+    flex-wrap:wrap;
+  }
+  .masthead-row h1{font-size:2.1rem;}
+  .tagline{
+    color:var(--ink-soft);
+    font-size:1.05rem;
+    margin-top:10px;
+    max-width:52ch;
+  }
+  .stamp{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.78rem;
+    border:1px solid var(--verified);
+    color:var(--verified);
+    background:var(--verified-bg);
+    padding:7px 12px;
+    border-radius:3px;
+    white-space:nowrap;
+    transform:rotate(-1.5deg);
+    opacity:0;
+    animation:stamp-in 0.5s ease-out 0.15s forwards;
+  }
+  @keyframes stamp-in{
+    from{opacity:0; transform:rotate(-6deg) scale(0.9);}
+    to{opacity:1; transform:rotate(-1.5deg) scale(1);}
+  }
+  @media (prefers-reduced-motion: reduce){
+    .stamp{animation:none; opacity:1;}
+  }
+
+  /* ---- sections ---- */
+  section{
+    padding:40px 0;
+    border-bottom:1px solid var(--rule);
+  }
+  section:last-of-type{border-bottom:none;}
+  section h2{
+    font-size:1.3rem;
+    margin-bottom:16px;
+  }
+  section p{margin:0 0 14px; max-width:66ch;}
+  section p:last-child{margin-bottom:0;}
+
+  .rule-box{
+    background:var(--paper-raised);
+    border:1px solid var(--rule);
+    border-left:3px solid var(--ink);
+    padding:18px 20px;
+    font-size:1.02rem;
+  }
+  .rule-box strong{font-weight:600;}
+
+  /* ---- proof steps ---- */
+  ol.proof{
+    list-style:none;
+    margin:0;
+    padding:0;
+    counter-reset:step;
+  }
+  ol.proof li{
+    counter-increment:step;
+    display:grid;
+    grid-template-columns:28px 1fr;
+    gap:14px;
+    padding:16px 0;
+    border-top:1px solid var(--rule);
+  }
+  ol.proof li:first-child{border-top:none;}
+  ol.proof li::before{
+    content:counter(step);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.85rem;
+    color:var(--ink-soft);
+    padding-top:2px;
+  }
+  .proof-title{font-weight:500; margin-bottom:4px;}
+  .proof-note{color:var(--ink-soft); font-size:0.94rem; margin-bottom:8px;}
+  .status-tag{
+    display:inline-block;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem;
+    padding:2px 8px;
+    border-radius:3px;
+    margin-bottom:8px;
+  }
+  .status-tag.pending{background:var(--pending-bg); color:var(--pending);}
+  .status-tag.confirmed{background:var(--verified-bg); color:var(--verified);}
+  a.txlink{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.85rem;
+    word-break:break-all;
+    text-decoration:none;
+    border-bottom:1px solid var(--link);
+  }
+  a.txlink:hover{border-bottom-width:2px;}
+
+  /* ---- deployment table ---- */
+  .kv{
+    display:grid;
+    grid-template-columns:auto 1fr;
+    gap:8px 20px;
+    font-size:0.94rem;
+  }
+  .kv dt{color:var(--ink-soft);}
+  .kv dd{
+    margin:0;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.85rem;
+    word-break:break-all;
+  }
+  .kv-group{margin-bottom:20px;}
+  .kv-group:last-child{margin-bottom:0;}
+  .kv-group h3{
+    font-family:'IBM Plex Sans',sans-serif;
+    font-weight:600;
+    font-size:0.85rem;
+    text-transform:none;
+    color:var(--ink);
+    margin:0 0 10px;
+    padding-bottom:6px;
+    border-bottom:1px solid var(--rule);
+  }
+
+  /* ---- test tally ---- */
+  .tally{
+    display:flex;
+    gap:36px;
+    flex-wrap:wrap;
+  }
+  .tally-item .num{
+    font-family:'Newsreader',serif;
+    font-size:2.3rem;
+    line-height:1;
+    display:block;
+  }
+  .tally-item .label{
+    color:var(--ink-soft);
+    font-size:0.88rem;
+    margin-top:4px;
+  }
+
+  /* ---- links list ---- */
+  ul.links{list-style:none; margin:0; padding:0;}
+  ul.links li{
+    padding:12px 0;
+    border-top:1px solid var(--rule);
+    display:flex;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+  }
+  ul.links li:first-child{border-top:none;}
+  ul.links .name{font-weight:500;}
+  ul.links .desc{color:var(--ink-soft); font-size:0.9rem;}
+
+  footer{
+    padding:32px 0 56px;
+    color:var(--ink-soft);
+    font-size:0.85rem;
+  }
+
+  @media (max-width:600px){
+    body{font-size:16px;}
+    header.masthead{padding:40px 0 24px;}
+    .masthead-row h1{font-size:1.7rem;}
+    .kv{grid-template-columns:1fr;}
+    .kv dt{margin-top:6px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <div class="masthead-row">
+      <div>
+        <h1>AttestGuard</h1>
+        <p class="tagline">An AI agent watches for trade-finance deliveries and proposes advances. It cannot move a single unit of money on its own — a separate, boring, deterministic contract decides that.</p>
+      </div>
+      <span class="stamp">Live on Creditcoin CC3 testnet</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>The rule</h2>
+    <div class="rule-box">
+      Attestcoin Protocol proves that a delivery event really happened on another chain — no oracle, nothing to trust on that front. A separate contract on Creditcoin then checks the request against fixed limits: <strong>within the supplier's cap, it pays out automatically. Above it, or with a brand-new buyer relationship, a human has to confirm it first.</strong> The AI in the middle only watches and submits proofs. It has no path to funds that skips this contract.
+    </div>
+  </section>
+
+  <section>
+    <h2>Proven on-chain, not just in tests</h2>
+    <p>This is a real run against the live deployment below — three separate signed transactions, all public. The middle one is the important part: a brand-new supplier/buyer relationship, well within the funding cap, and the contract itself — not the off-chain agent — refuses to auto-fund it.</p>
+    <ol class="proof">
+      <li>
+        <div>
+          <div class="proof-title">Buyer confirms delivery, on Sepolia</div>
+          <a class="txlink" href="https://sepolia.etherscan.io/tx/0xc1900129d72b479775332586be157c1701bcc10f69efd8abe62c7838728ba5e8" target="_blank" rel="noopener">0xc1900129d72b479775332586be157c1701bcc10f69efd8abe62c7838728ba5e8</a>
+        </div>
+      </li>
+      <li>
+        <div>
+          <span class="status-tag pending">PendingConfirmation</span>
+          <div class="proof-title">Proof submitted to AttestGuardManager, on Creditcoin</div>
+          <div class="proof-note">First advance for this buyer relationship — the contract flags it for a human instead of paying out, even though the amount is well inside the cap.</div>
+          <a class="txlink" href="https://creditcoin-testnet.blockscout.com/tx/0x50fd868ed98742ef2f8c67128c6746725bae58d855c7f5259823e5af7c2b88a7" target="_blank" rel="noopener">0x50fd868ed98742ef2f8c67128c6746725bae58d855c7f5259823e5af7c2b88a7</a>
+        </div>
+      </li>
+      <li>
+        <div>
+          <span class="status-tag confirmed">Funded</span>
+          <div class="proof-title">Guardian confirms, advance is paid out</div>
+          <a class="txlink" href="https://creditcoin-testnet.blockscout.com/tx/0xb8224de65b63735475330c345a99c5b2ee13e4e3e1918655639ebfd9715de28f" target="_blank" rel="noopener">0xb8224de65b63735475330c345a99c5b2ee13e4e3e1918655639ebfd9715de28f</a>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Live deployment</h2>
+    <div class="kv-group">
+      <h3>Creditcoin CC3 testnet</h3>
+      <dl class="kv">
+        <dt>AttestGuardManager</dt>
+        <dd><a href="https://creditcoin-testnet.blockscout.com/address/0x048827Fea5864e14F3824a6B2487cdEe889EA5D8" target="_blank" rel="noopener">0x048827Fea5864e14F3824a6B2487cdEe889EA5D8</a></dd>
+        <dt>DemoAdvanceToken</dt>
+        <dd>0xccA56Cb1f15b1A20E24Db095104859f28D254f95</dd>
+        <dt>EvmV1Decoder</dt>
+        <dd>0x35AfE83Bb242e8fb1bBf085FEeCAab462DCe6eD6</dd>
+      </dl>
+    </div>
+    <div class="kv-group">
+      <h3>Ethereum Sepolia</h3>
+      <dl class="kv">
+        <dt>TradeConfirmation</dt>
+        <dd>0x8FA8Ef84036D81824A6EAab7C26A6d385c8d005F</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section>
+    <h2>Tests</h2>
+    <div class="tally">
+      <div class="tally-item">
+        <span class="num">46</span>
+        <span class="label">Solidity tests</span>
+      </div>
+      <div class="tally-item">
+        <span class="num">58</span>
+        <span class="label">off-chain agent tests</span>
+      </div>
+      <div class="tally-item">
+        <span class="num">100%</span>
+        <span class="label">passing, CI on every push</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Read more</h2>
+    <ul class="links">
+      <li>
+        <span class="name"><a href="https://github.com/rudimentall1/AttestGuard" target="_blank" rel="noopener">GitHub repository</a></span>
+        <span class="desc">source, tests, ADRs, CI</span>
+      </li>
+      <li>
+        <span class="name"><a href="https://raw.githubusercontent.com/rudimentall1/AttestGuard/main/docs/AttestGuard-Whitepaper.pdf" target="_blank" rel="noopener">Whitepaper</a></span>
+        <span class="desc">architecture and trust boundaries</span>
+      </li>
+      <li>
+        <span class="name"><a href="https://github.com/rudimentall1/AttestGuard/blob/main/SECURITY.md" target="_blank" rel="noopener">Security writeup</a></span>
+        <span class="desc">what's centralized right now, and why</span>
+      </li>
+      <li>
+        <span class="name"><a href="https://youtu.be/EXlsqFU8Dfg" target="_blank" rel="noopener">Demo video</a></span>
+        <span class="desc">walkthrough of the flow</span>
+      </li>
+    </ul>
+  </section>
+
+  <footer>
+    Built for BUIDL CTC 2026 Fall, on Creditcoin. This page states only what's in the repository above — nothing here is a claim beyond what's verifiable at those links.
+  </footer>
+
+</div>
+
+</body>
+</html>
