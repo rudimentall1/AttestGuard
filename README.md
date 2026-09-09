@@ -1,14 +1,10 @@
 # AttestGuard
 
-**[Live demo page →](https://rudimentall1.github.io/AttestGuard/)** — real on-chain proof, live deployment addresses, test results.
+**[Live demo page →](https://rudimentall1.github.io/AttestGuard/)**: real on-chain proof, live deployment addresses, test results.
 
 AI-assisted trade finance workflow with deterministic policy control on Creditcoin.
 
-AttestGuard allows suppliers to receive invoice advances after delivery events are cryptographically verified.
-
-The core idea:
-
-**AI can analyze and recommend. AI cannot authorize financial actions.**
+AttestGuard lets suppliers receive invoice advances once delivery is cryptographically verified, not once someone believes it happened. The core idea driving the whole design: **AI can analyze and recommend. AI cannot authorize financial actions.**
 
 Built for **BUIDL CTC 2026 Fall**.
 
@@ -16,99 +12,46 @@ Built for **BUIDL CTC 2026 Fall**.
 
 # 30-second overview
 
-Traditional invoice financing has a trust problem.
+Traditional invoice financing has a trust problem. Before sending money, a financing provider needs to know whether the delivery really happened, whether the buyer's history is reliable, how much can safely be advanced, and whether the decision can be checked later. Most existing systems answer these questions with manual checks, centralized databases, or an intermediary everyone just has to trust.
 
-Before sending money, a financing provider needs to know:
-
-- Did the delivery really happen?
-- Is the buyer history reliable?
-- How much can safely be advanced?
-- Can the decision be verified later?
-
-Most existing systems depend on manual checks, centralized databases, or trusted intermediaries.
-
-AttestGuard replaces this with:
-
-- cryptographic event verification through Attestcoin Protocol;
-- deterministic financial policy enforcement;
-- AI-assisted analysis with strict safety boundaries.
-
-The AI agent helps process information and create underwriting evidence.
-
-It does not control money.
+AttestGuard answers them differently: cryptographic event verification through the Attestcoin Protocol, deterministic financial policy enforcement in the contract itself, and an AI layer that helps process information and build the underwriting evidence but never touches the money.
 
 ---
 
 # How it works
 
-
+```
 Buyer confirms delivery
-|
-v
+        |
+        v
 TradeConfirmation.sol
-|
-v
+        |
+        v
 Attestcoin Protocol proof
-|
-v
+        |
+        v
 AttestGuardManager.sol
-|
-+---- Policy passed
-| |
-| v
-| Auto funding
-|
-+---- Policy exceeded
-|
-v
-Guardian review
+        |
+        +---- Policy passed  ----> Auto funding
+        |
+        +---- Policy exceeded ---> Guardian review
+```
 
-
-The system separates two different questions.
+The system keeps two questions separate, and answers them with two different mechanisms.
 
 ## 1. Did the event happen?
 
-Answered by Attestcoin Protocol.
-
-The system does not trust:
-
-- API responses;
-- centralized oracle claims;
-- AI statements.
-
-The delivery event must have cryptographic proof.
+Answered by the Attestcoin Protocol, not by anything AttestGuard says about itself. It doesn't trust API responses, centralized oracle claims, or anything the AI produces. The delivery event needs actual cryptographic proof before anything downstream can act on it.
 
 ## 2. Should funding happen?
 
-Answered by deterministic policy rules.
-
-The contract checks:
-
-- advance limits;
-- supplier caps;
-- repayment history;
-- risk boundaries;
-- review requirements.
-
-The AI agent cannot bypass these rules.
+Answered by deterministic policy rules baked into the contract: advance limits, supplier caps, repayment history, risk boundaries, when a human needs to sign off. The AI agent has no way around any of it.
 
 ---
 
 # Why AttestGuard exists
 
-AI agents are becoming capable of performing financial workflows.
-
-The problem:
-
-Giving an AI unrestricted financial authority creates unacceptable risks.
-
-AttestGuard follows a different approach:
-
-AI performs analysis.
-
-Blockchain and deterministic rules control execution.
-
-This creates a system where AI can be useful without becoming the final authority.
+AI agents are getting capable enough to run real financial workflows, and that's exactly the problem: giving an AI unrestricted financial authority is a bad trade even when the AI is usually right. AttestGuard splits the job instead: the AI does the analysis, the blockchain and a set of deterministic rules control what actually executes. That split is what lets the AI be genuinely useful without ever becoming the final word on whether money moves.
 
 ---
 
@@ -118,90 +61,42 @@ This creates a system where AI can be useful without becoming the final authorit
 
 ### AttestGuardManager.sol
 
-Main protocol contract.
-
-Responsibilities:
-
-- verify Attestcoin proofs;
-- enforce funding policies;
-- prevent replay attacks;
-- store underwriting commitments;
-- provide pause protection.
+The main protocol contract. It verifies Attestcoin proofs, enforces funding policy, blocks replay attacks, stores underwriting commitments, and can be paused.
 
 ### TradeConfirmation.sol
 
-Source-chain demo contract.
-
-A buyer confirms delivery and creates an event that can later be verified through Attestcoin Protocol.
+The source-chain demo contract. A buyer confirms delivery here, which creates the event that Attestcoin Protocol later verifies.
 
 ### DemoAdvanceToken.sol
 
-Demo ERC20 token used for payout simulation.
+A demo ERC20 used to simulate payouts.
 
 ---
 
 # Off-chain Agent
 
-Location:
+Lives in `offchain-agent/src`. It watches for blockchain events, processes proofs, loads a supplier's verified history, prepares the underwriting evidence, generates reports, checks integrity, and creates the decision commitment. The main pieces:
 
-
-offchain-agent/src
-
-
-The agent handles:
-
-- blockchain event monitoring;
-- proof processing;
-- supplier history loading;
-- underwriting preparation;
-- report generation;
-- integrity verification;
-- decision commitment creation.
-
-Main components:
-
-
+```
 worker.ts
 policy.ts
 underwriter.ts
 history.ts
 report.ts
 proof/
+```
 
-
-The agent prepares decisions.
-
-The contract controls execution.
+The agent prepares the decision. The contract is what actually controls execution, and that division doesn't bend for convenience anywhere in the codebase.
 
 ---
 
 # AI Safety Model
 
-The main rule:
+The rule this whole project is built around:
 
 > AI can recommend. AI cannot authorize.
 
-The AI layer can:
-
-- analyze evidence;
-- generate explanations;
-- create risk notes;
-- suggest additional review.
-
-The AI layer cannot:
-
-- increase funding limits;
-- approve blocked requests;
-- bypass policy;
-- move funds.
-
-Important outputs are committed through hashes:
-
-- evidence hash;
-- decision hash;
-- AI trace hash.
-
-This allows later verification of what the system actually produced.
+The AI layer can analyze evidence, generate explanations, create risk notes, and suggest extra review. It cannot raise funding limits, approve something that was blocked, bypass policy, or move funds. None of those paths exist for it. The important outputs (evidence, decision, AI trace) are committed as hashes, so what the system actually produced can be checked later instead of taken on faith.
 
 ---
 
@@ -223,12 +118,13 @@ Implemented:
 - proof bundle generation
 - off-chain worker architecture
 - review routing
+- share-based liquidity accounting for depositors
 
 ---
 
 # Live deployment
 
-Current demo deployment (redeployed with a rotated owner key — the two previous addresses, 0x7d73424a8256C0b2BA245e5d5a3De8820E45F390 and 0x59AF421cB35fc23aB6C8ee42743e6176040031f4, are both stale and no longer used):
+Current demo deployment (redeployed with share-based liquidity accounting; the three previous addresses, 0x7d73424a8256C0b2BA245e5d5a3De8820E45F390, 0x59AF421cB35fc23aB6C8ee42743e6176040031f4, and 0x048827Fea5864e14F3824a6B2487cdEe889EA5D8, are all stale and no longer used):
 
 > **Note on the demo video:** the walkthrough video linked from the DoraHacks
 > submission was recorded against an earlier address. The mechanism it shows
@@ -238,71 +134,52 @@ Current demo deployment (redeployed with a rotated owner key — the two previou
 
 AttestGuardManager:
 
-
-0x048827Fea5864e14F3824a6B2487cdEe889EA5D8
-
+```
+0xf2a9ad1450aEa713886912578128FE3312dC52C5
+```
 
 EvmV1Decoder:
 
-
-0x35AfE83Bb242e8fb1bBf085FEeCAab462DCe6eD6
-
+```
+0x10774e375da23eE7418Cea823Be6147ed7453349
+```
 
 DemoAdvanceToken:
 
-
-0xccA56Cb1f15b1A20E24Db095104859f28D254f95
-
+```
+0x7dcd03F4375A60A3e511F8D0473a5494bE42048E
+```
 
 Explorer:
 
-https://creditcoin-testnet.blockscout.com/address/0x048827Fea5864e14F3824a6B2487cdEe889EA5D8
+https://creditcoin-testnet.blockscout.com/address/0xf2a9ad1450aEa713886912578128FE3312dC52C5
 
 ## Ethereum Sepolia
 
 TradeConfirmation:
 
-
+```
 0x8FA8Ef84036D81824A6EAab7C26A6d385c8d005F
-
+```
 
 ---
 
 # Proven on-chain, not just in tests
 
-Ran the full cycle for real on the current deployment above, three separate
-signed transactions, all public:
+Ran the full cycle for real on a prior deployment of this same contract (before the share-accounting liquidity fix above), three separate signed transactions, all public. The relationship guardrail and the funding mechanism are unchanged by that fix, so this is still accurate proof of how the flow behaves; the addresses below are from that earlier deployment, not the current one listed above.
 
-1. **Buyer confirms delivery on Sepolia** —
+1. **Buyer confirms delivery on Sepolia**
    [`0xc1900129d72b479775332586be157c1701bcc10f69efd8abe62c7838728ba5e8`](https://sepolia.etherscan.io/tx/0xc1900129d72b479775332586be157c1701bcc10f69efd8abe62c7838728ba5e8)
-2. **Proof submitted to AttestGuardManager on Creditcoin** — this is a brand-new
-   supplier/buyer relationship, so the contract itself (not the off-chain
-   agent) flags it for guardian confirmation instead of auto-funding, even
-   though the amount is well within the funding cap —
+2. **Proof submitted to AttestGuardManager on Creditcoin.** This is a brand-new supplier/buyer relationship, so the contract itself, not the off-chain agent, flags it for guardian confirmation instead of auto-funding, even though the amount is well within the funding cap.
    [`0x50fd868ed98742ef2f8c67128c6746725bae58d855c7f5259823e5af7c2b88a7`](https://creditcoin-testnet.blockscout.com/tx/0x50fd868ed98742ef2f8c67128c6746725bae58d855c7f5259823e5af7c2b88a7)
-3. **Guardian confirms it, advance is funded** —
+3. **Guardian confirms it, advance is funded.**
    [`0xb8224de65b63735475330c345a99c5b2ee13e4e3e1918655639ebfd9715de28f`](https://creditcoin-testnet.blockscout.com/tx/0xb8224de65b63735475330c345a99c5b2ee13e4e3e1918655639ebfd9715de28f)
 
-Step 2 is the important one: it's the on-chain relationship guardrail
-actually firing on mainnet-equivalent infrastructure against a real
-Attestcoin proof, not a mocked one in a Hardhat test.
+Step 2 is the one that matters: the on-chain relationship guardrail actually firing on mainnet-equivalent infrastructure against a real Attestcoin proof, not a mocked one inside a Hardhat test.
 
 # Decision hash trail
 
-The manager stores underwriting decision commitments.
-
-The off-chain agent creates a deterministic decision identity from:
-
-- underwriting proposal;
-- evidence;
-- AI trace;
-- security-relevant parameters.
-
-The blockchain stores the commitment for auditability.
-
-The contract does not trust the AI output.
-
-It only stores a verifiable record.
+The manager stores underwriting decision commitments. The off-chain agent builds a deterministic decision identity from the underwriting proposal, the evidence, the AI trace, and the security-relevant parameters, and the blockchain stores that commitment for auditability. The contract never trusts the AI output itself. It only ever stores a verifiable record of it.
 
 ---
 
@@ -310,31 +187,23 @@ It only stores a verifiable record.
 
 Agent tests:
 
-
+```
 58 / 58 passing
+```
 
-
-Covered:
-
-- report/proof-bundle integrity (hash-based, tamper-evident — not a cryptographic signature);
-- deterministic decisions;
-- AI safety boundaries;
-- underwriting validation;
-- review routing;
-- audit trail generation.
+Covered: report/proof-bundle integrity (hash-based, tamper-evident, not a cryptographic signature), deterministic decisions, AI safety boundaries, underwriting validation, review routing, and audit trail generation.
 
 Run locally:
 
 ```bash
 npm run build:agent
-
 npm run test:agent
-
 npm run demo:full
-Demo example
+```
 
-This is the actual captured output of `npm run demo:full` against this repo's
-synthetic demo scenario (`generate-report.ts`), not a hand-written narrative:
+## Demo example
+
+This is the actual captured output of `npm run demo:full` against this repo's synthetic demo scenario (`generate-report.ts`), not a hand-written narrative:
 
 ```
 DECISION:
@@ -359,15 +228,11 @@ AI trace hash:  0xf02328421210c857863f9fb91262762e834ac0760f3efbe09831aef2b763e1
 FINAL STATUS: REVIEW
 ```
 
-The AI's recommendation is capped at the supplier's auto-approve limit before
-it ever reaches the policy engine — the policy engine still has final say,
-and this scenario ends in `REVIEW`, not an automatic payout. For a real
-first-time-buyer payout actually going through `PendingConfirmation` on live
-infrastructure, see "Proven on-chain" above — that one used real money-path
-transactions, this one is the local synthetic scenario the test suite and
-`npm run demo:full` exercise on every run.
+The AI's recommendation is capped at the supplier's auto-approve limit before it ever reaches the policy engine. The policy engine still has final say, and this scenario ends in `REVIEW`, not an automatic payout. For a real first-time-buyer payout actually going through `PendingConfirmation` on live infrastructure, see "Proven on-chain" above: that one used real money-path transactions, this one is the local synthetic scenario the test suite and `npm run demo:full` exercise on every run.
 
-Repository structure
+## Repository structure
+
+```
 contracts/
     src/
         AttestGuardManager.sol
@@ -385,57 +250,45 @@ offchain-agent/
 deploy/
 
 contracts-test/
-Track fit
-AI
+```
 
-Autonomous AI workflow with deterministic safety boundaries.
+---
 
-The model assists with analysis but cannot authorize financial execution.
+# Track fit
 
-RWA
+**AI.** An autonomous AI workflow with deterministic safety boundaries: the model assists with analysis but has no path to authorizing financial execution.
 
-Invoice financing represents a real-world asset workflow backed by verified delivery events.
+**RWA.** Invoice financing is a real-world-asset workflow, and here it's backed by cryptographically verified delivery events instead of paperwork someone has to trust.
 
-DeFi
+**DeFi.** The protocol turns that into programmable financing logic with rules anyone can read on-chain, not rules that live in a spreadsheet.
 
-The protocol creates programmable financing logic with transparent rules.
+---
 
-Limitations
+# Limitations
 
-This is a hackathon prototype.
+This is a hackathon prototype, and it's worth being direct about where it still falls short of production:
 
-Current limitations:
+- invoice registration is still an administrative trust boundary (the owner registers invoices; see SECURITY.md for exactly what that means);
+- production deployment would need identity/KYC integration;
+- liquidity depositors can now withdraw their own share (fixed, see "Current implementation status" above), but there's still no yield mechanism, since repayment doesn't currently flow back into the vault;
+- additional source chains would need their own adapters.
 
-invoice registration remains an administrative trust boundary;
-production deployment requires identity/KYC integration;
-liquidity providers are not implemented;
-additional source chains require adapters.
+These are known next steps, not things being quietly ignored.
 
-These limitations are known engineering steps.
+# Roadmap
 
-Roadmap
+- financing operator dashboard
+- live advance monitoring
+- multi-chain support
+- supplier reputation system
+- production identity layer
+- improved AI explanations
+- a real yield mechanism for liquidity providers, tied to repayment actually flowing back into the vault
 
-Future improvements:
+# Security Principles
 
-financing operator dashboard;
-live advance monitoring;
-multi-chain support;
-supplier reputation system;
-production identity layer;
-improved AI explanations;
-decentralized liquidity providers.
-Security Principles
+Three things this project tries to hold to everywhere: verify inputs cryptographically, keep financial decisions deterministic, and make AI actions auditable. The goal was never to replace financial controls with AI. It's to make AI useful inside a system where the safety rules stay stronger than the model itself.
 
-AttestGuard follows three principles:
-
-Verify inputs cryptographically.
-Keep financial decisions deterministic.
-Make AI actions auditable.
-
-The goal is not to replace financial controls with AI.
-
-The goal is to make AI useful inside systems where safety rules remain stronger than the model itself.
-
-License
+# License
 
 MIT
