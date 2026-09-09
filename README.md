@@ -166,14 +166,14 @@ TradeConfirmation:
 
 # Proven on-chain, not just in tests
 
-Ran the full cycle for real on a prior deployment of this same contract (before the share-accounting liquidity fix above), three separate signed transactions, all public. The relationship guardrail and the funding mechanism are unchanged by that fix, so this is still accurate proof of how the flow behaves; the addresses below are from that earlier deployment, not the current one listed above.
+Ran the full cycle for real on the current deployment above, three separate signed transactions, all public.
 
 1. **Buyer confirms delivery on Sepolia**
-   [`0xc1900129d72b479775332586be157c1701bcc10f69efd8abe62c7838728ba5e8`](https://sepolia.etherscan.io/tx/0xc1900129d72b479775332586be157c1701bcc10f69efd8abe62c7838728ba5e8)
+   [`0x156506e315f4f6e6cf691ce07dbddcf1dde526e649ed53d7493e3dce35ad1e68`](https://sepolia.etherscan.io/tx/0x156506e315f4f6e6cf691ce07dbddcf1dde526e649ed53d7493e3dce35ad1e68)
 2. **Proof submitted to AttestGuardManager on Creditcoin.** This is a brand-new supplier/buyer relationship, so the contract itself, not the off-chain agent, flags it for guardian confirmation instead of auto-funding, even though the amount is well within the funding cap.
-   [`0x50fd868ed98742ef2f8c67128c6746725bae58d855c7f5259823e5af7c2b88a7`](https://creditcoin-testnet.blockscout.com/tx/0x50fd868ed98742ef2f8c67128c6746725bae58d855c7f5259823e5af7c2b88a7)
+   [`0xecdb307365ff852ed1ee8a9a9a6fb4e784ed77857eeac4f107e8c19c602c20eb`](https://creditcoin-testnet.blockscout.com/tx/0xecdb307365ff852ed1ee8a9a9a6fb4e784ed77857eeac4f107e8c19c602c20eb)
 3. **Guardian confirms it, advance is funded.**
-   [`0xb8224de65b63735475330c345a99c5b2ee13e4e3e1918655639ebfd9715de28f`](https://creditcoin-testnet.blockscout.com/tx/0xb8224de65b63735475330c345a99c5b2ee13e4e3e1918655639ebfd9715de28f)
+   [`0xae6c29aef8ebc9c56100d7d0e0155390c736fe26667aae97508a148a1ad7e4df`](https://creditcoin-testnet.blockscout.com/tx/0xae6c29aef8ebc9c56100d7d0e0155390c736fe26667aae97508a148a1ad7e4df)
 
 Step 2 is the one that matters: the on-chain relationship guardrail actually firing on mainnet-equivalent infrastructure against a real Attestcoin proof, not a mocked one inside a Hardhat test.
 
